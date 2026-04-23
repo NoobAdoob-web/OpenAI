@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="22" fill="#1a73e8"/>
+  <!-- Table body -->
+  <rect x="14" y="38" width="100" height="60" rx="6" fill="white"/>
+  <!-- Header band -->
+  <rect x="14" y="38" width="100" height="22" rx="6" fill="#4285f4"/>
+  <rect x="14" y="50" width="100" height="10" fill="#4285f4"/>
+  <!-- Vertical dividers -->
+  <line x1="47" y1="60" x2="47" y2="98" stroke="#dadce0" stroke-width="2"/>
+  <line x1="81" y1="60" x2="81" y2="98" stroke="#dadce0" stroke-width="2"/>
+  <!-- Horizontal dividers -->
+  <line x1="14" y1="74" x2="114" y2="74" stroke="#dadce0" stroke-width="2"/>
+  <line x1="14" y1="86" x2="114" y2="86" stroke="#dadce0" stroke-width="2"/>
+  <!-- Header text dots -->
+  <rect x="22" y="44" width="18" height="4" rx="2" fill="rgba(255,255,255,0.8)"/>
+  <rect x="55" y="44" width="14" height="4" rx="2" fill="rgba(255,255,255,0.8)"/>
+  <rect x="89" y="44" width="16" height="4" rx="2" fill="rgba(255,255,255,0.8)"/>
+  <!-- Download arrow -->
+  <circle cx="100" cy="96" r="18" fill="#34a853"/>
+  <path d="M100 86 L100 103 M93 97 L100 105 L107 97" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

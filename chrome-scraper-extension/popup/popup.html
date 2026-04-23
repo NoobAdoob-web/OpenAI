@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Instant Data Scraper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <img src="../icons/icon.svg" alt="" class="logo">
+    <span class="title">Instant Data Scraper</span>
+  </div>
+
+  <!-- Empty state -->
+  <div id="empty-state" class="empty-state" style="display:none">
+    <div class="empty-icon">🔍</div>
+    <p>No data tables detected on this page.</p>
+    <p class="hint">Try navigating to a page with tables, lists, or repeated data rows.</p>
+  </div>
+
+  <!-- Loading state -->
+  <div id="loading-state" class="empty-state">
+    <div class="spinner"></div>
+    <p>Detecting data…</p>
+  </div>
+
+  <!-- Main UI -->
+  <div id="main-ui" style="display:none">
+
+    <!-- Status bar -->
+    <div class="status-bar">
+      <div class="count-info">
+        <span class="badge" id="badge-rows">0</span> rows
+        &times;
+        <span class="badge" id="badge-cols">0</span> cols
+      </div>
+      <div class="status-actions">
+        <span class="candidate-label" id="candidate-label"></span>
+        <button id="btn-try-another" class="btn btn-secondary" title="Cycle to the next detected data region">
+          ↻ Try Another Table
+        </button>
+      </div>
+    </div>
+
+    <!-- Preview table -->
+    <div class="preview-wrap">
+      <div class="preview-scroll">
+        <table id="preview-table"></table>
+      </div>
+      <div class="preview-footer" id="preview-footer"></div>
+    </div>
+
+    <!-- Pagination section -->
+    <div class="section">
+      <div class="section-title">Pagination</div>
+
+      <div class="row-flex" id="picker-row">
+        <button id="btn-locate-next" class="btn btn-secondary">
+          ⊕ Locate Next Button
+        </button>
+        <span class="selector-display" id="selector-display">Not set</span>
+        <button id="btn-clear-selector" class="btn btn-ghost" title="Clear selector" style="display:none">✕</button>
+      </div>
+
+      <div class="row-flex">
+        <label class="lbl">Max pages:</label>
+        <input type="number" id="input-max-pages" value="100" min="1" max="9999" class="num-input">
+        <button id="btn-start-crawl" class="btn btn-primary" disabled>▶ Start Crawling</button>
+        <button id="btn-stop-crawl" class="btn btn-danger" style="display:none">■ Stop</button>
+      </div>
+
+      <div class="crawl-status" id="crawl-status"></div>
+    </div>
+
+    <!-- Export -->
+    <div class="export-row">
+      <button id="btn-csv" class="btn btn-export btn-csv" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        Download CSV
+      </button>
+      <button id="btn-xlsx" class="btn btn-export btn-xlsx" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        Download Excel
+      </button>
+    </div>
+
+  </div><!-- /main-ui -->
+
+  <script src="popup.js"></script>
+</body>
+</html>
