@@ -67,18 +67,25 @@
       if (visible(el) && el.parentElement) containers.add(el.parentElement);
     });
 
-    // ── 3. Image/link grids (Instagram, Pinterest, etc.) ─────────────────
-    // Walk up from linked images — catches photo/reel grids with hashed class names
+    // ── 2b. Role-based containers (Instagram tabpanel, ARIA feeds/lists) ──
+    document.querySelectorAll('[role="tabpanel"], [role="feed"], [role="list"], [role="main"]').forEach(el => {
+      if (visible(el)) containers.add(el);
+    });
+
+    // ── 3. Image/link grids (Instagram, Pinterest, photo galleries) ───────
+    // Walk up to 8 levels from every linked image; do NOT break early so the
+    // highest-scoring grid container (not just a 3-item row) is collected.
     document.querySelectorAll('a[href] img').forEach(img => {
       const card = img.closest('a[href]');
       if (!card) return;
-      // The grid container is typically 2-3 levels up from the card
       let el = card.parentElement;
-      for (let i = 0; i < 3 && el && el !== document.body; i++, el = el.parentElement) {
-        if ([...el.children].filter(c => c.querySelector('a[href] img')).length >= 3) {
-          if (visible(el)) containers.add(el);
-          break;
-        }
+      for (let i = 0; i < 8 && el && el !== document.body; i++, el = el.parentElement) {
+        if (!visible(el)) continue;
+        const mediaCount = [...el.children].filter(c =>
+          c.querySelector('a[href] img') ||        // child wraps a linked img
+          (c.tagName === 'A' && c.querySelector('img')) // child IS the link
+        ).length;
+        if (mediaCount >= 3) containers.add(el);  // keep going — find the biggest grid
       }
     });
 
@@ -692,7 +699,15 @@
 
       case 'detect':
         detect();
-        sendResponse({ data: currentData, count: candidates.length, currentIndex });
+        if (candidates.length > 0) {
+          sendResponse({ data: currentData, count: candidates.length, currentIndex });
+        } else {
+          // SPA (React/Vue): grid may still be rendering — retry once after a short wait
+          sleep(1200).then(() => {
+            detect();
+            sendResponse({ data: currentData, count: candidates.length, currentIndex });
+          });
+        }
         break;
 
       case 'nextCandidate':
