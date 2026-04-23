@@ -67,6 +67,21 @@
       if (visible(el) && el.parentElement) containers.add(el.parentElement);
     });
 
+    // ── 3. Image/link grids (Instagram, Pinterest, etc.) ─────────────────
+    // Walk up from linked images — catches photo/reel grids with hashed class names
+    document.querySelectorAll('a[href] img').forEach(img => {
+      const card = img.closest('a[href]');
+      if (!card) return;
+      // The grid container is typically 2-3 levels up from the card
+      let el = card.parentElement;
+      for (let i = 0; i < 3 && el && el !== document.body; i++, el = el.parentElement) {
+        if ([...el.children].filter(c => c.querySelector('a[href] img')).length >= 3) {
+          if (visible(el)) containers.add(el);
+          break;
+        }
+      }
+    });
+
     containers.forEach(parent => {
       if (usedEls.has(parent)) return;
       const children = [...parent.children].filter(visible);
@@ -125,10 +140,12 @@
     if (depth > 5) return 0;
     let n = 0;
     for (const c of el.children) {
+      if (c.tagName === 'IMG') { n++; continue; }           // images = data
+      if (c.tagName === 'A' && c.getAttribute('href')) { n++; continue; } // links = data
       if (c.children.length === 0 && c.textContent.trim()) n++;
       else n += countLeaves(c, depth + 1);
     }
-    return n || (el.textContent.trim() ? 1 : 0);
+    return n || (el.querySelector('img, a[href]') ? 1 : 0) || (el.textContent.trim() ? 1 : 0);
   }
 
   // ─── Extraction ──────────────────────────────────────────────────────────
@@ -185,28 +202,79 @@
   function extractList(items) {
     if (!items || items.length === 0) return { headers: [], rows: [] };
 
-    // Build headers from the first item's leaf elements
-    const firstItem = items[0];
-    const leafEls = getLeafEls(firstItem);
-    const headers = leafEls.map((el, i) => labelFor(el, i));
-    const dedupHeaders = dedup(headers);
+    // Detect structural "special" fields present in the items (URL, Thumbnail, Description)
+    const specialFields = detectSpecialFields(items);
+
+    // Build text-leaf headers from the first item
+    const leafEls = getLeafEls(items[0]);
+    const textHeaders = leafEls.map((el, i) => labelFor(el, i));
+    const allHeaders = dedup([...specialFields, ...textHeaders]);
 
     const rows = items.map(item => {
-      const leaves = getLeafVals(item);
       const row = {};
-      dedupHeaders.forEach((h, i) => { row[h] = leaves[i] ?? ''; });
+
+      // Populate special fields
+      if (specialFields.includes('URL')) {
+        const a = item.tagName === 'A' ? item : item.querySelector('a[href]');
+        row['URL'] = a ? makeAbsolute(a.getAttribute('href') || '') : '';
+      }
+      if (specialFields.includes('Thumbnail')) {
+        const img = item.querySelector('img[src]') || item.querySelector('img');
+        row['Thumbnail'] = img ? (img.getAttribute('src') || '') : '';
+      }
+      if (specialFields.includes('Description')) {
+        const img = item.querySelector('img[alt]') || item.querySelector('img');
+        row['Description'] = img ? (img.alt?.trim() || '') : '';
+      }
+
+      // Populate text leaf fields (skip keys already claimed by special fields)
+      const leaves = getLeafVals(item);
+      textHeaders.forEach((h, i) => {
+        if (!(h in row)) row[h] = leaves[i] ?? '';
+      });
+
       return row;
     });
 
     // Drop columns that are blank for every row
-    const liveHeaders = dedupHeaders.filter(h => rows.some(r => r[h]));
+    const liveHeaders = allHeaders.filter(h => rows.some(r => r[h]));
     const cleanRows = rows.map(r => {
       const out = {};
       liveHeaders.forEach(h => { out[h] = r[h]; });
       return out;
     });
 
-    return { headers: liveHeaders.length ? liveHeaders : dedupHeaders, rows: cleanRows };
+    return { headers: liveHeaders.length ? liveHeaders : allHeaders, rows: cleanRows };
+  }
+
+  function detectSpecialFields(items) {
+    const fields = [];
+    const sample = items.slice(0, 5);
+
+    const hasLink = sample.some(el =>
+      (el.tagName === 'A' && el.getAttribute('href')) || el.querySelector('a[href]')
+    );
+    if (hasLink) fields.push('URL');
+
+    const imgs = sample.flatMap(el =>
+      el.tagName === 'IMG' ? [el] : [...el.querySelectorAll('img[src]')]
+    );
+    if (imgs.length > 0) {
+      fields.push('Thumbnail');
+      if (imgs.some(img => img.alt && img.alt.trim().length > 2)) {
+        fields.push('Description');
+      }
+    }
+
+    return fields;
+  }
+
+  function makeAbsolute(href) {
+    if (!href) return '';
+    if (href.startsWith('http')) return href;
+    if (href.startsWith('//')) return location.protocol + href;
+    if (href.startsWith('/')) return location.origin + href;
+    return '';
   }
 
   function getLeafEls(el, depth = 0) {
@@ -457,6 +525,81 @@
     chrome.runtime.sendMessage({ type: 'crawlComplete', allRows, pages: page }).catch(() => {});
   }
 
+  // ─── Infinite scroll crawl ────────────────────────────────────────────────
+  async function startInfiniteScrollCrawl(maxScrolls) {
+    crawlActive = true;
+    const allRows = [...currentData.rows];
+    let scroll = 1;
+    let staleCount = 0;
+
+    sendProgress(scroll, allRows);
+
+    while (crawlActive && scroll <= maxScrolls) {
+      const prevSize = allRows.length;
+
+      // Scroll window and any scrollable container to the bottom
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      const scroller = findScrollContainer();
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+
+      // Wait for new items to appear in the DOM
+      await waitForNewItems(prevSize);
+      scroll++;
+
+      // Re-detect at same candidate position and merge new rows
+      const fresh = buildCandidates();
+      const idx = Math.min(currentIndex, fresh.length - 1);
+      if (idx >= 0) {
+        const newData = extractData(fresh[idx]);
+        const rowSet = new Set(allRows.map(r => JSON.stringify(r)));
+        newData.rows.forEach(row => {
+          const k = JSON.stringify(row);
+          if (!rowSet.has(k)) { rowSet.add(k); allRows.push(row); }
+        });
+        currentData = newData;
+        candidates = fresh;
+      }
+
+      sendProgress(scroll, allRows);
+
+      if (allRows.length === prevSize) {
+        staleCount++;
+        if (staleCount >= 3) break; // No new content after 3 consecutive scrolls
+      } else {
+        staleCount = 0;
+      }
+    }
+
+    crawlActive = false;
+    chrome.runtime.sendMessage({ type: 'crawlComplete', allRows, pages: scroll }).catch(() => {});
+  }
+
+  async function waitForNewItems(currentCount, timeout = 7000) {
+    return new Promise(resolve => {
+      const timer = setTimeout(() => { obs.disconnect(); resolve(); }, timeout);
+      const obs = new MutationObserver(() => {
+        const fresh = buildCandidates();
+        const idx = Math.min(currentIndex, fresh.length - 1);
+        if (idx < 0) return;
+        if (extractData(fresh[idx]).rows.length > currentCount) {
+          obs.disconnect();
+          clearTimeout(timer);
+          setTimeout(resolve, 500); // Extra wait for lazy-loaded images / React renders
+        }
+      });
+      obs.observe(document.body, { childList: true, subtree: true });
+    });
+  }
+
+  function findScrollContainer() {
+    const candidates = [
+      document.querySelector('[role="main"]'),
+      document.querySelector('main'),
+      ...document.querySelectorAll('[style*="overflow"]'),
+    ].filter(el => el && el !== document.body && el.scrollHeight > el.clientHeight + 100);
+    return candidates[0] || null;
+  }
+
   function sendProgress(page, allRows) {
     chrome.runtime.sendMessage({ type: 'crawlProgress', page, allRows }).catch(() => {});
   }
@@ -577,6 +720,11 @@
 
       case 'startCrawl':
         startCrawl(msg.nextSelector, msg.maxPages || 100);
+        sendResponse({ ok: true });
+        break;
+
+      case 'startInfiniteScroll':
+        startInfiniteScrollCrawl(msg.maxScrolls || 100);
         sendResponse({ ok: true });
         break;
 

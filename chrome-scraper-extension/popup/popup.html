@@ -57,11 +57,15 @@
       <div class="section-title">Pagination</div>
 
       <div class="row-flex" id="picker-row">
-        <button id="btn-locate-next" class="btn btn-secondary">
+        <button id="btn-locate-next" class="btn btn-secondary" title="Click an element on the page to use as the 'Next' button">
           ⊕ Locate Next Button
         </button>
+        <span class="pagination-or">or</span>
+        <button id="btn-infinite-scroll" class="btn btn-secondary btn-scroll" title="Scroll down to load more content (for infinite-scroll pages like Instagram)">
+          ↓ Infinite Scroll
+        </button>
         <span class="selector-display" id="selector-display">Not set</span>
-        <button id="btn-clear-selector" class="btn btn-ghost" title="Clear selector" style="display:none">✕</button>
+        <button id="btn-clear-selector" class="btn btn-ghost" title="Clear" style="display:none">✕</button>
       </div>
 
       <div class="row-flex">

@@ -7,6 +7,7 @@ let exportRows = [];                          // rows to export (grows during cr
 let exportHeaders = [];
 let nextSelector = null;
 let crawling = false;
+let infiniteScrollMode = false;
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -126,6 +127,7 @@ function renderPreview(data) {
 function bindUI() {
   $('btn-try-another').addEventListener('click', onTryAnother);
   $('btn-locate-next').addEventListener('click', onLocateNext);
+  $('btn-infinite-scroll').addEventListener('click', onInfiniteScrollToggle);
   $('btn-clear-selector').addEventListener('click', onClearSelector);
   $('btn-start-crawl').addEventListener('click', onStartCrawl);
   $('btn-stop-crawl').addEventListener('click', onStopCrawl);
@@ -175,8 +177,37 @@ function onClearSelector() {
   chrome.runtime.sendMessage({ action: 'setTabState', tabId, state: { selector: null, selectorText: null } }).catch(() => {});
 }
 
+function onInfiniteScrollToggle() {
+  infiniteScrollMode = !infiniteScrollMode;
+  const btn = $('btn-infinite-scroll');
+  const locateBtn = $('btn-locate-next');
+
+  if (infiniteScrollMode) {
+    btn.classList.add('active');
+    btn.textContent = '✓ Infinite Scroll ON';
+    locateBtn.disabled = true;
+    $('selector-display').textContent = 'Infinite scroll mode active';
+    $('selector-display').className = 'selector-display set';
+    $('btn-clear-selector').style.display = 'none';
+    $('btn-start-crawl').disabled = false;
+  } else {
+    btn.classList.remove('active');
+    btn.textContent = '↓ Infinite Scroll';
+    locateBtn.disabled = false;
+    if (nextSelector) {
+      showSelector(nextSelector, null);
+    } else {
+      $('selector-display').textContent = 'Not set';
+      $('selector-display').className = 'selector-display';
+      $('btn-start-crawl').disabled = true;
+    }
+  }
+}
+
 async function onStartCrawl() {
-  if (crawling || !nextSelector) return;
+  if (crawling) return;
+  if (!infiniteScrollMode && !nextSelector) return;
+
   const maxPages = parseInt($('input-max-pages').value) || 100;
 
   crawling = true;
@@ -185,15 +216,24 @@ async function onStartCrawl() {
 
   $('btn-start-crawl').style.display = 'none';
   $('btn-stop-crawl').style.display = 'inline-flex';
-  setStatus(`Crawling page 1… ${exportRows.length} rows`);
   updateExportButtons();
 
-  await chrome.tabs.sendMessage(tabId, {
-    action: 'startCrawl',
-    tabId,
-    nextSelector,
-    maxPages
-  }).catch(() => {});
+  if (infiniteScrollMode) {
+    setStatus(`Scrolling… ${exportRows.length} rows loaded`);
+    await chrome.tabs.sendMessage(tabId, {
+      action: 'startInfiniteScroll',
+      tabId,
+      maxScrolls: maxPages
+    }).catch(() => {});
+  } else {
+    setStatus(`Crawling page 1… ${exportRows.length} rows`);
+    await chrome.tabs.sendMessage(tabId, {
+      action: 'startCrawl',
+      tabId,
+      nextSelector,
+      maxPages
+    }).catch(() => {});
+  }
 }
 
 async function onStopCrawl() {
@@ -224,9 +264,9 @@ function listenMessages() {
     if (msg.type === 'crawlProgress') {
       exportRows = msg.allRows || exportRows;
       if (!exportHeaders.length && currentData.headers.length) exportHeaders = currentData.headers;
-      setStatus(`Crawling page ${msg.page}… ${exportRows.length} rows collected`);
+      const label = infiniteScrollMode ? `Scroll ${msg.page}` : `Page ${msg.page}`;
+      setStatus(`${label}… ${exportRows.length} rows collected`);
       updateExportButtons();
-      // Refresh count badge
       $('badge-rows').textContent = exportRows.length;
     }
 
