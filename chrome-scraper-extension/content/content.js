@@ -72,20 +72,20 @@
       if (visible(el)) containers.add(el);
     });
 
-    // ── 3. Image/link grids (Instagram, Pinterest, photo galleries) ───────
-    // Walk up to 8 levels from every linked image; do NOT break early so the
-    // highest-scoring grid container (not just a 3-item row) is collected.
-    document.querySelectorAll('a[href] img').forEach(img => {
-      const card = img.closest('a[href]');
-      if (!card) return;
-      let el = card.parentElement;
+    // ── 3. Image grids (Instagram, Pinterest, any photo grid) ────────────
+    // Walk up from EVERY visible image — does NOT require images to be inside
+    // <a> tags. Handles Instagram's overlay-link pattern where <a> and <img>
+    // are siblings, not ancestor/descendant.
+    document.querySelectorAll('img').forEach(img => {
+      if (!visible(img)) return;
+      let el = img.parentElement;
       for (let i = 0; i < 8 && el && el !== document.body; i++, el = el.parentElement) {
         if (!visible(el)) continue;
-        const mediaCount = [...el.children].filter(c =>
-          c.querySelector('a[href] img') ||        // child wraps a linked img
-          (c.tagName === 'A' && c.querySelector('img')) // child IS the link
-        ).length;
-        if (mediaCount >= 3) containers.add(el);  // keep going — find the biggest grid
+        // Count children that contain at least one image
+        const imgChildren = [...el.children].filter(c =>
+          c.tagName === 'IMG' || c.querySelector('img')
+        );
+        if (imgChildren.length >= 3) containers.add(el);
       }
     });
 
@@ -131,30 +131,38 @@
 
     containers.forEach(parent => processAsContainer(parent, 0));
 
-    // ── 4. Safety net: direct linked-image group scan ─────────────────────
-    // If nothing was found yet, collect all <a href> elements that contain an
-    // <img>, group siblings by parent, and treat each parent with 3+ such
-    // children as a data container. Catches grids missed by all heuristics above.
+    // ── 4. Safety net: walk up from every image, group by parent ─────────
+    // Absolute last resort — does not require <a> tags at all. For each visible
+    // <img>, walks up the tree until it finds a sibling group of 3+ image-
+    // containing elements. Works for any grid layout regardless of link structure.
     if (results.length === 0) {
-      const parentMap = new Map();
-      document.querySelectorAll('a[href]').forEach(a => {
-        if (!a.querySelector('img') || !visible(a)) return;
-        const p = a.parentElement;
-        if (!p || p === document.body) return;
-        if (!parentMap.has(p)) parentMap.set(p, []);
-        parentMap.get(p).push(a);
+      const imgParentMap = new Map();
+      document.querySelectorAll('img').forEach(img => {
+        if (!visible(img)) return;
+        let el = img.parentElement;
+        for (let i = 0; i < 8 && el && el !== document.body; i++, el = el.parentElement) {
+          const parent = el.parentElement;
+          if (!parent || parent === document.body) break;
+          const imgSibs = [...parent.children].filter(c =>
+            c.tagName === 'IMG' || c.querySelector('img')
+          );
+          if (imgSibs.length >= 3 && visible(parent) && !imgParentMap.has(parent)) {
+            imgParentMap.set(parent, imgSibs);
+            break; // found closest ancestor — stop per-image walk
+          }
+        }
       });
-      parentMap.forEach((links, parent) => {
-        if (links.length < 3 || usedEls.has(parent)) return;
-        if (!visible(parent)) return;
+
+      imgParentMap.forEach((items, parent) => {
+        if (usedEls.has(parent)) return;
         usedEls.add(parent);
-        const avgF = links.reduce((s, el) => s + countLeaves(el), 0) / links.length;
+        const avgF = items.reduce((s, el) => s + countLeaves(el), 0) / items.length;
         results.push({
           element: parent,
           type: 'list',
-          items: links,
-          score: links.length * Math.max(avgF, 1),
-          rows: links.length,
+          items,
+          score: items.length * Math.max(avgF, 1),
+          rows: items.length,
           cols: Math.round(Math.max(avgF, 1))
         });
       });
@@ -261,15 +269,22 @@
 
       // Populate special fields
       if (specialFields.includes('URL')) {
-        const a = item.tagName === 'A' ? item : item.querySelector('a[href]');
+        // Try inside item first, then look at sibling links in the parent card
+        const a = (item.tagName === 'A' ? item : null)
+          || item.querySelector('a[href]')
+          || item.parentElement?.querySelector('a[href]');
         row['URL'] = a ? makeAbsolute(a.getAttribute('href') || '') : '';
       }
       if (specialFields.includes('Thumbnail')) {
-        const img = item.querySelector('img[src]') || item.querySelector('img');
+        const img = (item.tagName === 'IMG' ? item : null)
+          || item.querySelector('img[src]')
+          || item.querySelector('img');
         row['Thumbnail'] = img ? (img.getAttribute('src') || '') : '';
       }
       if (specialFields.includes('Description')) {
-        const img = item.querySelector('img[alt]') || item.querySelector('img');
+        const img = (item.tagName === 'IMG' ? item : null)
+          || item.querySelector('img[alt]')
+          || item.querySelector('img');
         row['Description'] = img ? (img.alt?.trim() || '') : '';
       }
 
@@ -297,16 +312,23 @@
     const fields = [];
     const sample = items.slice(0, 5);
 
-    const hasLink = sample.some(el =>
-      (el.tagName === 'A' && el.getAttribute('href')) || el.querySelector('a[href]')
-    );
+    // Check for links: inside item, item itself, OR sibling inside the same card parent
+    const hasLink = sample.some(el => {
+      if (el.tagName === 'A' && el.getAttribute('href')) return true;
+      if (el.querySelector('a[href]')) return true;
+      // Instagram overlay-link: <a> is a sibling of <img> inside the card wrapper
+      const p = el.parentElement;
+      return p && p.querySelector('a[href]');
+    });
     if (hasLink) fields.push('URL');
 
-    const imgs = sample.flatMap(el =>
-      el.tagName === 'IMG' ? [el] : [...el.querySelectorAll('img[src]')]
-    );
-    if (imgs.length > 0) {
+    // Check for images: item itself or any descendant
+    const hasImg = sample.some(el => el.tagName === 'IMG' || el.querySelector('img'));
+    if (hasImg) {
       fields.push('Thumbnail');
+      const imgs = sample.flatMap(el =>
+        el.tagName === 'IMG' ? [el] : [...el.querySelectorAll('img')]
+      );
       if (imgs.some(img => img.alt && img.alt.trim().length > 2)) {
         fields.push('Description');
       }
