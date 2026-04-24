@@ -72,27 +72,33 @@
       if (visible(el)) containers.add(el);
     });
 
-    // ── 3. Image grids (Instagram, Pinterest, any photo grid) ────────────
-    // Walk up from EVERY visible image — does NOT require images to be inside
-    // <a> tags. Handles Instagram's overlay-link pattern where <a> and <img>
-    // are siblings, not ancestor/descendant.
-    document.querySelectorAll('img').forEach(img => {
-      if (!visible(img)) return;
-      let el = img.parentElement;
-      for (let i = 0; i < 8 && el && el !== document.body; i++, el = el.parentElement) {
-        if (!visible(el)) continue;
-        // Count children that contain at least one image
-        const imgChildren = [...el.children].filter(c =>
-          c.tagName === 'IMG' || c.querySelector('img')
+    // ── 3. Image/video grids (Instagram reels, Pinterest, any photo grid) ──
+    // Walk up from EVERY img/video — does NOT require images to be inside <a>
+    // tags. Skip visible() on media elements themselves: Instagram lazy-loads
+    // with src="" → 0x0 bbox, so visible() would wrongly reject them. Instead
+    // check notHidden() on the media element and visible() on the container.
+    document.querySelectorAll('img, video').forEach(media => {
+      if (!notHidden(media)) return;
+      let el = media.parentElement;
+      for (let i = 0; i < 12 && el && el !== document.body; i++, el = el.parentElement) {
+        if (!notHidden(el)) continue;
+        // Count children that contain at least one media element
+        const mediaChildren = [...el.children].filter(c =>
+          c.tagName === 'IMG' || c.tagName === 'VIDEO' ||
+          c.querySelector('img, video')
         );
-        if (imgChildren.length >= 3) containers.add(el);
+        // Require the container itself to have a real rendered size
+        if (mediaChildren.length >= 3) {
+          const r = el.getBoundingClientRect();
+          if (r.width > 0 || r.height > 0) containers.add(el);
+        }
       }
     });
 
     // Recursively find the first level of repeating children inside any container.
-    // This handles deeply-nested grids (e.g. tabpanel → div → div → reel-items).
+    // Depth 12 handles Instagram-style deeply-nested grids (role="main" → 8 wrapper divs → grid).
     function processAsContainer(parent, depth) {
-      if (depth > 5 || usedEls.has(parent)) return;
+      if (depth > 12 || usedEls.has(parent)) return;
       if (parent === document.body || parent === document.documentElement) return;
 
       const children = [...parent.children].filter(visible);
@@ -131,29 +137,30 @@
 
     containers.forEach(parent => processAsContainer(parent, 0));
 
-    // ── 4. Safety net: walk up from every image, group by parent ─────────
-    // Absolute last resort — does not require <a> tags at all. For each visible
-    // <img>, walks up the tree until it finds a sibling group of 3+ image-
-    // containing elements. Works for any grid layout regardless of link structure.
+    // ── 4. Safety net: walk up from every img/video, group by parent ──────
+    // Absolute last resort — works for any grid regardless of link structure.
+    // Uses notHidden() instead of visible() so lazy-loaded (src="") images are
+    // not skipped. The PARENT is checked for a real rendered bounding box.
     if (results.length === 0) {
-      const imgParentMap = new Map();
-      document.querySelectorAll('img').forEach(img => {
-        if (!visible(img)) return;
-        let el = img.parentElement;
-        for (let i = 0; i < 8 && el && el !== document.body; i++, el = el.parentElement) {
+      const mediaParentMap = new Map();
+      document.querySelectorAll('img, video').forEach(media => {
+        if (!notHidden(media)) return;
+        let el = media.parentElement;
+        for (let i = 0; i < 12 && el && el !== document.body; i++, el = el.parentElement) {
           const parent = el.parentElement;
           if (!parent || parent === document.body) break;
-          const imgSibs = [...parent.children].filter(c =>
-            c.tagName === 'IMG' || c.querySelector('img')
+          const mediaSibs = [...parent.children].filter(c =>
+            c.tagName === 'IMG' || c.tagName === 'VIDEO' || c.querySelector('img, video')
           );
-          if (imgSibs.length >= 3 && visible(parent) && !imgParentMap.has(parent)) {
-            imgParentMap.set(parent, imgSibs);
-            break; // found closest ancestor — stop per-image walk
+          const pr = parent.getBoundingClientRect();
+          if (mediaSibs.length >= 3 && (pr.width > 0 || pr.height > 0) && !mediaParentMap.has(parent)) {
+            mediaParentMap.set(parent, mediaSibs);
+            break;
           }
         }
       });
 
-      imgParentMap.forEach((items, parent) => {
+      mediaParentMap.forEach((items, parent) => {
         if (usedEls.has(parent)) return;
         usedEls.add(parent);
         const avgF = items.reduce((s, el) => s + countLeaves(el), 0) / items.length;
@@ -190,16 +197,26 @@
     } catch (_) { return false; }
   }
 
+  // Lighter check: not hidden by CSS, regardless of dimensions.
+  // Use for media elements (img/video) that may be lazy-loaded (src="" → 0x0).
+  function notHidden(el) {
+    if (!el) return false;
+    try {
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+    } catch (_) { return false; }
+  }
+
   function countLeaves(el, depth = 0) {
-    if (depth > 5) return 0;
+    if (depth > 8) return 0;
     let n = 0;
     for (const c of el.children) {
-      if (c.tagName === 'IMG') { n++; continue; }           // images = data
-      if (c.tagName === 'A' && c.getAttribute('href')) { n++; continue; } // links = data
+      if (c.tagName === 'IMG' || c.tagName === 'VIDEO') { n++; continue; } // media = data
+      if (c.tagName === 'A' && c.getAttribute('href')) { n++; continue; }  // links = data
       if (c.children.length === 0 && c.textContent.trim()) n++;
       else n += countLeaves(c, depth + 1);
     }
-    return n || (el.querySelector('img, a[href]') ? 1 : 0) || (el.textContent.trim() ? 1 : 0);
+    return n || (el.querySelector('img, video, a[href]') ? 1 : 0) || (el.textContent.trim() ? 1 : 0);
   }
 
   // ─── Extraction ──────────────────────────────────────────────────────────
@@ -279,7 +296,12 @@
         const img = (item.tagName === 'IMG' ? item : null)
           || item.querySelector('img[src]')
           || item.querySelector('img');
-        row['Thumbnail'] = img ? (img.getAttribute('src') || '') : '';
+        const vid = !img && ((item.tagName === 'VIDEO' ? item : null)
+          || item.querySelector('video[poster]')
+          || item.querySelector('video'));
+        row['Thumbnail'] = img
+          ? (img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('srcset')?.split(' ')[0] || '')
+          : vid ? (vid.getAttribute('poster') || vid.getAttribute('src') || '') : '';
       }
       if (specialFields.includes('Description')) {
         const img = (item.tagName === 'IMG' ? item : null)
@@ -322,8 +344,11 @@
     });
     if (hasLink) fields.push('URL');
 
-    // Check for images: item itself or any descendant
-    const hasImg = sample.some(el => el.tagName === 'IMG' || el.querySelector('img'));
+    // Check for images/video: item itself or any descendant
+    const hasImg = sample.some(el =>
+      el.tagName === 'IMG' || el.tagName === 'VIDEO' ||
+      el.querySelector('img, video')
+    );
     if (hasImg) {
       fields.push('Thumbnail');
       const imgs = sample.flatMap(el =>
@@ -763,11 +788,16 @@
         if (candidates.length > 0) {
           sendResponse({ data: currentData, count: candidates.length, currentIndex });
         } else {
-          // SPA (React/Vue): grid may still be rendering — retry once after a short wait
-          sleep(1200).then(() => {
-            detect();
+          // SPA (Instagram/React/Vue): content may still be rendering.
+          // Retry at 800ms, 2000ms, and 4000ms before giving up.
+          (async () => {
+            for (const delay of [800, 1200, 2000]) {
+              await sleep(delay);
+              detect();
+              if (candidates.length > 0) break;
+            }
             sendResponse({ data: currentData, count: candidates.length, currentIndex });
-          });
+          })();
         }
         break;
 
