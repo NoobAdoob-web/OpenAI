@@ -89,12 +89,16 @@
       }
     });
 
-    containers.forEach(parent => {
-      if (usedEls.has(parent)) return;
-      const children = [...parent.children].filter(visible);
-      if (children.length < 3) return;
+    // Recursively find the first level of repeating children inside any container.
+    // This handles deeply-nested grids (e.g. tabpanel → div → div → reel-items).
+    function processAsContainer(parent, depth) {
+      if (depth > 5 || usedEls.has(parent)) return;
+      if (parent === document.body || parent === document.documentElement) return;
 
-      // Group children by structural signature
+      const children = [...parent.children].filter(visible);
+      if (children.length === 0) return;
+
+      // Group children by structural signature (tag + top classes)
       const groups = new Map();
       children.forEach(child => {
         const sig = sig_of(child);
@@ -102,24 +106,59 @@
         groups.get(sig).push(child);
       });
 
+      let dominated = false;
       groups.forEach(group => {
-        if (group.length < 3) return;
-        if (usedEls.has(parent)) return;
-        usedEls.add(parent);
-
+        if (group.length < 3 || usedEls.has(parent)) return;
         const avgFields = group.reduce((s, el) => s + countLeaves(el), 0) / group.length;
-        if (avgFields < 1) return;
-
+        if (avgFields < 0.5) return; // allow image-only grids (1 img = 1 field)
+        usedEls.add(parent);
+        dominated = true;
         results.push({
           element: parent,
           type: 'list',
           items: group,
-          score: group.length * avgFields,
+          score: group.length * Math.max(avgFields, 1),
           rows: group.length,
-          cols: Math.round(avgFields)
+          cols: Math.round(Math.max(avgFields, 1))
         });
       });
-    });
+
+      // No repeating group in direct children → drill deeper into each child
+      if (!dominated) {
+        children.forEach(child => processAsContainer(child, depth + 1));
+      }
+    }
+
+    containers.forEach(parent => processAsContainer(parent, 0));
+
+    // ── 4. Safety net: direct linked-image group scan ─────────────────────
+    // If nothing was found yet, collect all <a href> elements that contain an
+    // <img>, group siblings by parent, and treat each parent with 3+ such
+    // children as a data container. Catches grids missed by all heuristics above.
+    if (results.length === 0) {
+      const parentMap = new Map();
+      document.querySelectorAll('a[href]').forEach(a => {
+        if (!a.querySelector('img') || !visible(a)) return;
+        const p = a.parentElement;
+        if (!p || p === document.body) return;
+        if (!parentMap.has(p)) parentMap.set(p, []);
+        parentMap.get(p).push(a);
+      });
+      parentMap.forEach((links, parent) => {
+        if (links.length < 3 || usedEls.has(parent)) return;
+        if (!visible(parent)) return;
+        usedEls.add(parent);
+        const avgF = links.reduce((s, el) => s + countLeaves(el), 0) / links.length;
+        results.push({
+          element: parent,
+          type: 'list',
+          items: links,
+          score: links.length * Math.max(avgF, 1),
+          rows: links.length,
+          cols: Math.round(Math.max(avgF, 1))
+        });
+      });
+    }
 
     // Sort best first, skip root elements
     return results
