@@ -143,85 +143,196 @@ function waitForComplete(tabId, timeout) {
 
 // ── The per-post extractor (INJECTED into each post tab) ───────────────────
 // Must be fully self-contained — it runs in the target page, not here.
+// Strategy: read the numbers from the page's EMBEDDED JSON first (the most
+// reliable source — Meta/YouTube ship engagement data inside <script> tags),
+// then fall back to an aria-label / icon DOM scan, then to plain text.
 // options: { date, likes, comments, shares, commentText, maxComments }
 function extractPostDetails(options) {
   const host = location.hostname;
   const out = {};
+
+  // ── Build a searchable blob of all inline JSON + the rendered HTML ──
+  let scriptBlob = '';
+  try {
+    const scripts = document.querySelectorAll(
+      'script[type="application/json"], script[type="application/ld+json"], script:not([src])'
+    );
+    for (const s of scripts) scriptBlob += '\n' + (s.textContent || '');
+  } catch (_) {}
+  const htmlBlob = (document.documentElement && document.documentElement.outerHTML) || '';
+  const blob = scriptBlob + '\n' + htmlBlob;
   const bodyText = (document.body && document.body.innerText) || '';
 
-  const grab = (re, src) => { const m = (src || bodyText).match(re); return m ? m[1].trim() : ''; };
+  // firstMatch: try each regex against a source, return the first capture group
+  const firstMatch = (patterns, src) => {
+    src = src || blob;
+    for (const re of patterns) {
+      const m = src.match(re);
+      if (m && m[1] != null && String(m[1]).length) return String(m[1]);
+    }
+    return '';
+  };
 
-  // ── Date ──
+  const unixToDate = (n) => {
+    const num = parseInt(n, 10);
+    if (!num) return '';
+    const ms = num < 1e12 ? num * 1000 : num; // seconds vs ms
+    try { return new Date(ms).toISOString().slice(0, 10); } catch (_) { return ''; }
+  };
+
+  const isFB = /facebook|fb\.com|fb\.watch/.test(host);
+  const isIG = /instagram/.test(host);
+  const isYT = /youtube|youtu\.be/.test(host);
+
+  // ═══════════════════ DATE ═══════════════════
   if (options.date) {
+    // 1) <time datetime> is the gold standard (Instagram, some others)
     const timeEl = document.querySelector('time[datetime]');
-    if (timeEl) {
-      out.Date = timeEl.getAttribute('datetime') || timeEl.textContent.trim();
-    } else if (/youtube/.test(host)) {
-      // YouTube: "Premiered Jan 5, 2024" / "Jan 5, 2024" in the info row
-      out.Date = grab(/(?:Premiered|Streamed live on|Published on|Uploaded on)?\s*([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4})/);
+    if (timeEl && timeEl.getAttribute('datetime')) {
+      out.Date = timeEl.getAttribute('datetime');
+    } else if (isFB) {
+      const ts = firstMatch([
+        /"creation_time":(\d{9,13})/, /"publish_time":(\d{9,13})/,
+        /"created_time":(\d{9,13})/, /"taken_at":(\d{9,13})/
+      ]);
+      out.Date = ts ? unixToDate(ts) : firstMatch([/([A-Z][a-z]+ \d{1,2}, \d{4})/], bodyText);
+    } else if (isIG) {
+      const ts = firstMatch([/"taken_at_timestamp":(\d{9,13})/, /"taken_at":(\d{9,13})/]);
+      out.Date = ts ? unixToDate(ts) : (timeEl?.textContent?.trim() || '');
+    } else if (isYT) {
+      out.Date = firstMatch([
+        /"publishDate":"(\d{4}-\d{2}-\d{2})/, /"uploadDate":"(\d{4}-\d{2}-\d{2})/,
+        /"dateText":\{"simpleText":"([^"]+)"/
+      ]) || firstMatch([/(?:Premiered |Streamed live on |Published on |)([A-Z][a-z]{2} \d{1,2}, \d{4})/], bodyText);
     } else {
-      out.Date = grab(/([A-Z][a-z]+\s+\d{1,2},\s+\d{4})/);
+      out.Date = firstMatch([/([A-Z][a-z]+ \d{1,2}, \d{4})/], bodyText);
     }
   }
 
-  // ── Likes ──
+  // ═══════════════════ LIKES / REACTIONS ═══════════════════
   if (options.likes) {
-    if (/youtube/.test(host)) {
-      // Like button aria-label: "like this video along with 12,345 other people"
-      const likeBtn = document.querySelector(
-        'like-button-view-model button, #segmented-like-button button, ' +
-        'ytd-toggle-button-renderer button[aria-label*="like"]'
-      );
-      const al = likeBtn?.getAttribute('aria-label') || '';
-      out.Likes = (al.match(/([\d.,]+)\s*(?:other )?(?:people|likes?)/i) || [])[1] || likeBtn?.textContent?.trim() || '';
-    } else {
-      out.Likes = grab(/([\d.,]+[KMB]?)\s+likes?/i) || grab(/([\d.,]+[KMB]?)\s+reactions?/i);
-      // Instagram sometimes: "Liked by X and N others"
-      if (!out.Likes) out.Likes = grab(/and\s+([\d.,]+[KMB]?)\s+others?/i);
+    if (isFB) {
+      out.Likes = firstMatch([
+        /"reaction_count":\{"count":(\d+)/,
+        /"i18n_reaction_count":"([\d.,KMB]+)"/,
+        /"reactors":\{[^}]*"count":(\d+)/,
+        /"reaction_count":\{[^}]*"count":(\d+)/,
+      ]);
+    } else if (isIG) {
+      out.Likes = firstMatch([
+        /"edge_media_preview_like":\{"count":(\d+)/,
+        /"edge_liked_by":\{"count":(\d+)/,
+        /"like_count":(\d+)/,
+      ]);
+    } else if (isYT) {
+      out.Likes = firstMatch([
+        /"accessibilityText":"([\d,]+) likes"/,
+        /"label":"([\d,]+) likes"/,
+        /"likeCount":"(\d+)"/,
+        /"defaultText":\{[^}]*"accessibilityData":\{"label":"([\d,]+) likes/,
+      ]);
     }
+    // Fallback: aria-labels / visible text
+    if (!out.Likes) out.Likes = scanCount(['like', 'reaction', 'react']) || firstMatch([/([\d.,]+[KMB]?)\s+(?:likes?|reactions?)/i], bodyText);
   }
 
-  // ── Comments (count) ──
+  // ═══════════════════ COMMENTS (count) ═══════════════════
   if (options.comments) {
-    if (/youtube/.test(host)) {
-      out.Comments = grab(/([\d.,]+)\s+Comments/i);
-    } else {
-      out.Comments = grab(/View all ([\d.,]+[KMB]?)\s+comments/i)
-        || grab(/([\d.,]+[KMB]?)\s+comments?/i);
+    if (isFB) {
+      out.Comments = firstMatch([
+        /"comment_count":\{"total_count":(\d+)/,
+        /"comment_count":\{[^}]*"count":(\d+)/,
+        /"comments":\{[^}]*"total_count":(\d+)/,
+        /"total_comment_count":(\d+)/,
+      ]);
+    } else if (isIG) {
+      out.Comments = firstMatch([
+        /"edge_media_to_comment":\{"count":(\d+)/,
+        /"edge_media_to_parent_comment":\{"count":(\d+)/,
+        /"comment_count":(\d+)/,
+      ]);
+    } else if (isYT) {
+      out.Comments = firstMatch([
+        /"commentCount":\{"simpleText":"([\d,]+)"/,
+        /"commentCount":"(\d+)"/,
+        /"contextualInfo":\{"runs":\[\{"text":"([\d,]+)"/,
+      ]);
     }
+    if (!out.Comments) out.Comments = scanCount(['comment']) || firstMatch([/([\d.,]+[KMB]?)\s+comments?/i, /View all ([\d.,]+[KMB]?)\s+comments/i], bodyText);
   }
 
-  // ── Shares ──
+  // ═══════════════════ SHARES ═══════════════════
   if (options.shares) {
-    // Instagram & YouTube do not expose a public share count.
-    if (!/instagram|youtube/.test(host)) {
-      out.Shares = grab(/([\d.,]+[KMB]?)\s+shares?/i);
+    if (isIG || isYT) {
+      out.Shares = ''; // not publicly exposed on these platforms
+    } else if (isFB) {
+      out.Shares = firstMatch([
+        /"share_count":\{"count":(\d+)/,
+        /"i18n_share_count":"([\d.,KMB]+)"/,
+        /"reshares":\{[^}]*"count":(\d+)/,
+        /"share_count_reduced":"([\d.,KMB]+)"/,
+      ]) || scanCount(['share', 'send']) || firstMatch([/([\d.,]+[KMB]?)\s+shares?/i], bodyText);
     } else {
-      out.Shares = ''; // not available on these platforms
+      out.Shares = firstMatch([/([\d.,]+[KMB]?)\s+shares?/i], bodyText);
     }
   }
 
-  // ── Comment text (top N) ──
+  // ═══════════════════ VIEWS (bonus — reels/videos) ═══════════════════
+  // Deep scrape can also confirm/fill the view count from the post page.
+  {
+    let v = '';
+    if (isFB) v = firstMatch([/"video_view_count":(\d+)/, /"play_count":(\d+)/, /"view_count":(\d+)/]);
+    else if (isIG) v = firstMatch([/"video_view_count":(\d+)/, /"play_count":(\d+)/, /"video_play_count":(\d+)/]);
+    else if (isYT) v = firstMatch([/"viewCount":"(\d+)"/, /"viewCount":\{"simpleText":"([\d,]+)/]);
+    if (v) out.Views = v;
+  }
+
+  // ═══════════════════ COMMENT TEXT (top N) ═══════════════════
   if (options.commentText) {
     const max = options.maxComments || 20;
     let nodes = [];
-    if (/youtube/.test(host)) {
+    if (isYT) {
       nodes = [...document.querySelectorAll('ytd-comment-thread-renderer #content-text, #content-text')];
-    } else if (/instagram/.test(host)) {
-      // Instagram comment spans (best-effort; structure changes often)
+    } else if (isIG) {
       nodes = [...document.querySelectorAll('ul ul span[dir="auto"], ul li span[dir="auto"]')];
-    } else if (/facebook/.test(host)) {
-      nodes = [...document.querySelectorAll('div[role="article"] div[dir="auto"]')];
+    } else if (isFB) {
+      nodes = [...document.querySelectorAll('div[role="article"] div[dir="auto"], [aria-label="Comment"] ~ div div[dir="auto"]')];
     }
     const texts = nodes
       .map(n => (n.innerText || n.textContent || '').trim())
       .filter(t => t.length > 1)
       .slice(0, max);
-    // Separated by " | " because comment text frequently contains commas
     out.CommentText = texts.join('  |  ');
   }
 
   return out;
+
+  // ── DOM helper: find a count near an icon/button whose aria-label matches ──
+  // Handles Facebook reels where the number sits under a heart/comment/share
+  // icon with NO adjacent word (so text-regex fails but aria-labels work).
+  function scanCount(keywords) {
+    const kw = new RegExp(keywords.join('|'), 'i');
+    const isNum = (t) => /^[\d][\d.,]*\s*[KMB]?$/i.test((t || '').trim());
+    // Candidate action elements: things with an aria-label mentioning the action
+    const candidates = [...document.querySelectorAll(
+      '[aria-label], [role="button"], a[href], div[role="button"]'
+    )].filter(el => {
+      const al = (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '');
+      return kw.test(al);
+    });
+    for (const el of candidates) {
+      // (a) the number may be baked into the aria-label itself
+      const al = el.getAttribute('aria-label') || '';
+      const m = al.match(/([\d.,]+\s*[KMB]?)/);
+      if (m && isNum(m[1])) return m[1].replace(/\s/g, '');
+      // (b) or a nearby sibling / descendant holds the number
+      const scope = el.parentElement || el;
+      const nums = [...scope.querySelectorAll('span, div')]
+        .filter(n => n.children.length === 0 && isNum(n.textContent));
+      if (nums.length) return nums[0].textContent.trim();
+    }
+    return '';
+  }
 }
 
 async function storeTabState(tabId, patch) {

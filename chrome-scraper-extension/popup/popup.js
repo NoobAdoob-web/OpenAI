@@ -210,6 +210,8 @@ function applyDeepResult(url, fields) {
   if (fields.Likes)    { row['Likes'] = fields.Likes; row['Likes (number)'] = toNum(fields.Likes); }
   if (fields.Comments) { row['Comments'] = fields.Comments; row['Comments (number)'] = toNum(fields.Comments); }
   if (fields.Shares)   { row['Shares'] = fields.Shares; row['Shares (number)'] = toNum(fields.Shares); }
+  // Deep scrape also confirms the view count from the post page (fills gaps)
+  if (fields.Views && !row['Views (number)']) { row['Views'] = fields.Views; row['Views (number)'] = toNum(fields.Views); }
   if (fields.CommentText) row['Comment Text'] = fields.CommentText;
 }
 
