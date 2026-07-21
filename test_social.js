@@ -57,7 +57,7 @@ const { chromium } = require('playwright');
 
   await run('YouTube /@channel/videos', 'https://www.youtube.com/@AajTakRadio/videos', YT, (r) => {
     const rows = r.data?.rows||[];
-    const ok = rows.length===3 && rows[0].Views==='1.2M views' && rows[0].Date==='2 days ago' && rows[0].Caption==='Big Breaking News Today' && rows[0].URL.includes('watch?v=aaa111');
+    const ok = rows.length===3 && rows[0].Views==='1.2M' && rows[0].Date==='2 days ago' && rows[0].Caption==='Big Breaking News Today' && rows[0].URL.includes('watch?v=aaa111');
     console.log(ok?`✓ PASS ${rows.length} videos, cols: ${r.data.headers.join(', ')}`:'❌ FAIL', JSON.stringify(rows[0]));
     return ok;
   });

@@ -488,40 +488,63 @@
 
   // ── YouTube ────────────────────────────────────────────────────────────
   // /@channel/videos — grid gives Title, Views, Upload date, URL, Thumbnail.
+  // Handles BOTH the old (#video-title / #metadata-line) and the new 2024
+  // yt-lockup-view-model layout, which dropped those IDs entirely.
   // (Likes / comments / shares are only on the individual watch page.)
   function extractYouTube() {
-    const items = [...document.querySelectorAll(
+    let items = [...document.querySelectorAll(
       'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ' +
-      'ytm-rich-item-renderer, ytd-reel-item-renderer'
+      'ytm-rich-item-renderer, ytd-reel-item-renderer, yt-lockup-view-model'
     )];
+    // New layout nests yt-lockup-view-model inside ytd-rich-item-renderer —
+    // if both matched, keep the innermost (lockup) to avoid duplicates.
+    if (items.some(i => i.tagName && i.tagName.toLowerCase() === 'yt-lockup-view-model')) {
+      items = items.filter(i => {
+        const t = i.tagName.toLowerCase();
+        if (t === 'yt-lockup-view-model') return true;
+        return !i.querySelector('yt-lockup-view-model');
+      });
+    }
     let container = items[0]?.parentElement || null;
 
     const rows = items.map(it => {
       const row = emptyRow();
+
+      // ── Link (watch/shorts) — most reliable anchor ──
+      const linkEl = it.querySelector('a#video-title-link, a#thumbnail, a[href*="/watch"], a[href*="/shorts/"]');
+      row.URL = linkEl?.href || '';
+
+      // ── Title — try known ids, new lockup class, headings, then link attrs ──
       const titleEl = it.querySelector(
-        '#video-title, #video-title-link, a#video-title, a.yt-simple-endpoint#video-title'
+        '#video-title, #video-title-link, a#video-title, ' +
+        '.yt-lockup-metadata-view-model-wiz__title, ' +
+        'h3 a, h3 span, [role="text"]'
       );
-      row.Caption = (titleEl?.getAttribute('title') || titleEl?.textContent || '').trim();
+      row.Caption = (
+        titleEl?.getAttribute('title') ||
+        titleEl?.textContent ||
+        linkEl?.getAttribute('title') ||
+        linkEl?.getAttribute('aria-label') || ''
+      ).trim().replace(/\s+/g, ' ');
 
-      const link = titleEl?.href
-        || it.querySelector('a#thumbnail')?.href
-        || it.querySelector('a[href*="/watch"], a[href*="/shorts/"]')?.href || '';
-      row.URL = link;
-
+      // ── Thumbnail ──
       const img = it.querySelector('img');
       row.Thumbnail = img?.src || img?.getAttribute('data-thumb') || '';
 
-      const meta = [...it.querySelectorAll(
-        '#metadata-line span, .inline-metadata-item, .ytd-video-meta-block span'
-      )].map(s => s.textContent.trim()).filter(Boolean);
-      meta.forEach(m => {
-        if (/view/i.test(m) && !row.Views) row.Views = m;
-        else if (/(ago|hour|day|week|month|year|minute|second)/i.test(m) && !row.Date) row.Date = m;
+      // ── Views + Date — scan every short text node in the item ──
+      // Works regardless of the metadata container's class names.
+      const bits = [...it.querySelectorAll('span, yt-formatted-string, div')]
+        .filter(e => e.children.length === 0)
+        .map(e => e.textContent.trim())
+        .filter(t => t && t.length < 40);
+      bits.forEach(m => {
+        if (/view/i.test(m) && !row.Views) row.Views = m.replace(/\s*views?/i, '').trim();
+        else if (/\bago\b|Premiered|Streamed/i.test(m) && !row.Date) row.Date = m.replace(/^(Premiered|Streamed live on)\s*/i, '').trim();
       });
 
-      // Fallback: parse the aria-label ("Title by Channel 1,234 views 2 days ago …")
-      const aria = titleEl?.getAttribute('aria-label') || '';
-      if (!row.Views) { const vm = aria.match(/([\d,]+)\s*views?/i); if (vm) row.Views = vm[1] + ' views'; }
+      // ── Fallback: parse aria-label ("… 1,234,567 views 2 days ago") ──
+      const aria = linkEl?.getAttribute('aria-label') || titleEl?.getAttribute('aria-label') || '';
+      if (!row.Views) { const vm = aria.match(/([\d,]+)\s*views?/i); if (vm) row.Views = vm[1]; }
       if (!row.Date)  { const dm = aria.match(/(\d+\s+(?:hour|day|week|month|year)s?\s+ago)/i); if (dm) row.Date = dm[1]; }
 
       return row;
