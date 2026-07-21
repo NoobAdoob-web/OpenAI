@@ -15,23 +15,35 @@
   let pickerBox = null;
   let pickerActive = false;
   let crawlActive = false;
-  let _tabId = null; // set by popup on first message
+  let _tabId = null;        // set by popup on first message
+  let _highlightedEl = null; // MUST be declared here (before bootstrap) — see note below
 
   // ─── Bootstrap ───────────────────────────────────────────────────────────
-  createOverlays();
-  checkPendingCrawl();
-  detect();
+  // Register the message listener FIRST, before anything that could throw.
+  // If detection/overlay code throws during bootstrap, the listener must still
+  // exist so the popup can talk to us. (A previous TDZ bug on _highlightedEl
+  // crashed the whole script here and left the listener unregistered, which is
+  // why pages WITH detectable data wrongly showed "No data detected".)
+  registerMessageListener();
+  try { createOverlays(); } catch (e) { console.warn('IDS createOverlays failed', e); }
+  try { checkPendingCrawl(); } catch (e) { console.warn('IDS checkPendingCrawl failed', e); }
+  try { detect(); } catch (e) { console.warn('IDS initial detect failed', e); }
 
   // ─── Detection ───────────────────────────────────────────────────────────
   function detect() {
-    candidates = buildCandidates();
+    try {
+      candidates = buildCandidates();
+    } catch (e) {
+      console.warn('IDS buildCandidates failed', e);
+      candidates = [];
+    }
     currentIndex = 0;
     if (candidates.length > 0) {
       currentData = extractData(candidates[0]);
-      showHighlight(candidates[0].element);
+      try { showHighlight(candidates[0].element); } catch (_) {}
     } else {
       currentData = { headers: [], rows: [] };
-      hideHighlight();
+      try { hideHighlight(); } catch (_) {}
     }
   }
 
@@ -387,7 +399,8 @@
           || item.querySelector('video'));
         row['Thumbnail'] = img
           ? (img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('srcset')?.split(' ')[0] || '')
-          : vid ? (vid.getAttribute('poster') || vid.getAttribute('src') || '') : '';
+          : vid ? (vid.getAttribute('poster') || vid.getAttribute('src') || '')
+          : bgImageUrl(item);  // Facebook-style: thumbnail is a CSS background-image
       }
       if (specialFields.includes('Description')) {
         const img = (item.tagName === 'IMG' ? item : null)
@@ -430,10 +443,10 @@
     });
     if (hasLink) fields.push('URL');
 
-    // Check for images/video: item itself or any descendant
+    // Check for images/video/background-image: item itself or any descendant
     const hasImg = sample.some(el =>
       el.tagName === 'IMG' || el.tagName === 'VIDEO' ||
-      el.querySelector('img, video')
+      el.querySelector('img, video') || bgImageUrl(el)
     );
     if (hasImg) {
       fields.push('Thumbnail');
@@ -456,12 +469,31 @@
     return '';
   }
 
+  // Extract the url(...) from a CSS background-image on the element or its
+  // first descendant that has one (Facebook renders reel thumbnails this way).
+  function bgImageUrl(el, depth = 0) {
+    if (!el || depth > 4) return '';
+    try {
+      const bg = window.getComputedStyle(el).backgroundImage;
+      const m = bg && bg.match(/url\((['"]?)(.*?)\1\)/);
+      if (m && m[2] && !m[2].startsWith('data:')) return m[2];
+    } catch (_) {}
+    for (const c of el.children) {
+      const u = bgImageUrl(c, depth + 1);
+      if (u) return u;
+    }
+    return '';
+  }
+
+  // Text leaves only — <img>/<video> are excluded because they are already
+  // captured by the Thumbnail/Description special fields (avoids duplicate cols).
   function getLeafEls(el, depth = 0) {
     if (depth > 5) return [];
     const out = [];
     for (const child of el.children) {
+      if (child.tagName === 'IMG' || child.tagName === 'VIDEO') continue;
       if (child.children.length === 0) {
-        if (child.textContent.trim() || child.tagName === 'IMG') out.push(child);
+        if (child.textContent.trim()) out.push(child);
       } else {
         out.push(...getLeafEls(child, depth + 1));
       }
@@ -473,11 +505,10 @@
     if (depth > 5) return [];
     const out = [];
     for (const child of el.children) {
+      if (child.tagName === 'IMG' || child.tagName === 'VIDEO') continue;
       if (child.children.length === 0) {
-        const text = child.tagName === 'IMG'
-          ? (child.alt || child.getAttribute('src') || '')
-          : child.innerText?.trim().replace(/\s+/g, ' ') || '';
-        if (text || child.tagName === 'IMG') out.push(text);
+        const text = child.innerText?.trim().replace(/\s+/g, ' ') || '';
+        if (text) out.push(text);
       } else {
         out.push(...getLeafVals(child, depth + 1));
       }
@@ -544,12 +575,10 @@
     return el;
   }
 
-  let _highlightedEl = null;
-
   function showHighlight(el) {
     _highlightedEl = el;
     updateHighlightPos();
-    highlightBox.style.display = 'block';
+    if (highlightBox) highlightBox.style.display = 'block';
   }
 
   function hideHighlight() {
@@ -861,7 +890,10 @@
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   // ─── Message Listener ────────────────────────────────────────────────────
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // Wrapped in a hoisted function so bootstrap can register it FIRST, before
+  // any code that might throw. This guarantees the popup can always reach us.
+  function registerMessageListener() {
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.tabId) _tabId = msg.tabId;
 
     switch (msg.action) {
@@ -870,7 +902,7 @@
         break;
 
       case 'detect':
-        detect();
+        try { detect(); } catch (e) { console.warn('IDS detect failed', e); }
         if (candidates.length > 0) {
           sendResponse({ data: currentData, count: candidates.length, currentIndex });
         } else {
@@ -934,5 +966,6 @@
         sendResponse({ ok: false, error: 'unknown action' });
     }
     return true;
-  });
+    });
+  }
 })();
