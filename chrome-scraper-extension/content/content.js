@@ -75,25 +75,41 @@
     // ── 3. Image/video grids — direct detection, bypasses sig_of grouping ──
     // Walk up from every img/video to find the CLOSEST ancestor with 3+ media-
     // containing children. Adds that container straight to results so hashed/
-    // unique CSS class names (Instagram, TikTok) can't break detection.
+    // unique CSS class names (Instagram, TikTok, Facebook) can't break detection.
     // Uses notHidden() not visible() for media elements because lazy-loaded
     // images have src="" → 0×0 bbox and would fail visible().
     {
+      // hasMedia: true if element IS or CONTAINS an img, video, or CSS background-image
+      function hasMedia(el) {
+        if (el.tagName === 'IMG' || el.tagName === 'VIDEO') return true;
+        if (el.querySelector('img, video')) return true;
+        try {
+          const bg = window.getComputedStyle(el).backgroundImage;
+          if (bg && bg !== 'none' && bg.startsWith('url(')) return true;
+        } catch (_) {}
+        // Check direct children for background-image (Facebook reel cards)
+        return [...el.children].some(c => {
+          try {
+            const bg = window.getComputedStyle(c).backgroundImage;
+            return bg && bg !== 'none' && bg.startsWith('url(');
+          } catch (_) { return false; }
+        });
+      }
+
       const seenMediaContainers = new Set();
+
+      // Walk from every img/video upward
       document.querySelectorAll('img, video').forEach(media => {
         if (!notHidden(media)) return;
         let el = media.parentElement;
         for (let i = 0; i < 14 && el && el !== document.body; i++, el = el.parentElement) {
           if (!notHidden(el) || seenMediaContainers.has(el) || usedEls.has(el)) continue;
-          const mediaChildren = [...el.children].filter(c =>
-            c.tagName === 'IMG' || c.tagName === 'VIDEO' || c.querySelector('img, video')
-          );
+          const mediaChildren = [...el.children].filter(hasMedia);
           if (mediaChildren.length >= 3) {
             const r = el.getBoundingClientRect();
             if (r.width > 0 || r.height > 0) {
               seenMediaContainers.add(el);
               usedEls.add(el);
-              // Score: more children = better; also add to containers for sig_of pass
               const avgF = mediaChildren.reduce((s, c) => s + countLeaves(c), 0) / mediaChildren.length;
               results.push({
                 element: el,
@@ -103,7 +119,41 @@
                 rows: mediaChildren.length,
                 cols: Math.round(Math.max(avgF, 1))
               });
-              break; // stop at the closest (most specific) ancestor
+              break;
+            }
+          }
+        }
+      });
+
+      // ── 3b. CSS background-image grids (Facebook reels, some news sites) ──
+      // Walk from every element that has a background-image URL — covers sites
+      // that render thumbnails purely via CSS without any <img> tag.
+      document.querySelectorAll('*').forEach(el => {
+        if (!notHidden(el) || seenMediaContainers.has(el) || usedEls.has(el)) return;
+        try {
+          const bg = window.getComputedStyle(el).backgroundImage;
+          if (!bg || bg === 'none' || !bg.startsWith('url(')) return;
+        } catch (_) { return; }
+        // Walk up to find a parent with 3+ bg-image children
+        let cur = el.parentElement;
+        for (let i = 0; i < 14 && cur && cur !== document.body; i++, cur = cur.parentElement) {
+          if (!notHidden(cur) || seenMediaContainers.has(cur) || usedEls.has(cur)) continue;
+          const bgKids = [...cur.children].filter(hasMedia);
+          if (bgKids.length >= 3) {
+            const r = cur.getBoundingClientRect();
+            if (r.width > 0 || r.height > 0) {
+              seenMediaContainers.add(cur);
+              usedEls.add(cur);
+              const avgF = bgKids.reduce((s, c) => s + countLeaves(c), 0) / bgKids.length;
+              results.push({
+                element: cur,
+                type: 'list',
+                items: bgKids,
+                score: bgKids.length * Math.max(avgF, 1),
+                rows: bgKids.length,
+                cols: Math.round(Math.max(avgF, 1))
+              });
+              break;
             }
           }
         }
