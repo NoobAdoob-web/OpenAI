@@ -21,7 +21,16 @@
   // Module constants — MUST be declared before bootstrap (which calls detect →
   // buildCandidates → extractSocialRows). A `const` used before its declaration
   // line executes throws a temporal-dead-zone ReferenceError, so they live here.
-  const SOCIAL_COLUMNS = ['Caption', 'Views', 'Likes', 'Comments', 'Shares', 'Date', 'URL', 'Thumbnail'];
+  // Each metric has a raw display column ("322K") and a numeric column ("322000")
+  // so the exported sheet is analysis-ready without manual conversion.
+  const SOCIAL_COLUMNS = [
+    'Caption',
+    'Views', 'Views (number)',
+    'Likes', 'Likes (number)',
+    'Comments', 'Comments (number)',
+    'Shares', 'Shares (number)',
+    'Date', 'URL', 'Thumbnail'
+  ];
   const NUM_RE = /^[\d][\d.,]*\s*[KMB]?$/i;  // "1,234", "12.3K", "4.5M", "893K"
 
   // ─── Bootstrap ───────────────────────────────────────────────────────────
@@ -405,7 +414,32 @@
       return true;
     });
 
+    // Fill numeric columns from the raw display columns (322K → 322000)
+    rows.forEach(r => {
+      r['Views (number)']    = parseCountToNumber(r.Views);
+      r['Likes (number)']    = parseCountToNumber(r.Likes);
+      r['Comments (number)'] = parseCountToNumber(r.Comments);
+      r['Shares (number)']   = parseCountToNumber(r.Shares);
+    });
+
     return { headers: SOCIAL_COLUMNS.slice(), rows, container };
+  }
+
+  // Convert a human count string to an absolute integer string.
+  //   "322K" → "322000"   "1.2M" → "1200000"   "1,234" → "1234"
+  //   "1.2M views" → "1200000"   "" → ""
+  function parseCountToNumber(s) {
+    if (s === null || s === undefined || s === '') return '';
+    const t = String(s).trim().replace(/,/g, '');
+    const m = t.match(/([\d]+(?:\.[\d]+)?)\s*([KMB])?/i);
+    if (!m) return '';
+    let n = parseFloat(m[1]);
+    if (isNaN(n)) return '';
+    const suf = (m[2] || '').toUpperCase();
+    if (suf === 'K') n *= 1e3;
+    else if (suf === 'M') n *= 1e6;
+    else if (suf === 'B') n *= 1e9;
+    return String(Math.round(n));
   }
 
   // ── Shared count helpers ───────────────────────────────────────────────

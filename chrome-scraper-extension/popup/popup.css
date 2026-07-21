@@ -211,6 +211,69 @@ body {
 .crawl-status.error { color: #d93025; }
 .crawl-status.done  { color: #137333; }
 
+/* ── Deep Scrape ─────────────────────────────────────────────────────── */
+.deep-master {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.deep-master input { width: 15px; height: 15px; cursor: pointer; }
+.deep-master-label { font-size: 13px; font-weight: 700; color: #202124; }
+.deep-sub { font-weight: 400; color: #80868b; font-size: 11px; }
+
+#deep-options { margin-top: 10px; }
+
+.deep-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin-bottom: 10px;
+}
+.deep-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #3c4043;
+  cursor: pointer;
+}
+.deep-opt input { width: 14px; height: 14px; cursor: pointer; }
+.deep-opt-wide { grid-column: 1 / -1; }
+.deep-rare { color: #9aa0a6; font-size: 10px; }
+
+.deep-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.callout {
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+.callout-warn {
+  background: #fef7e0;
+  border: 1px solid #fdd663;
+  color: #7c5b00;
+}
+.callout-warn strong { display: block; margin-bottom: 3px; color: #7c5b00; }
+.callout ul { margin: 0; padding-left: 16px; }
+.callout li { margin-bottom: 2px; }
+.callout b { color: #5c4400; }
+
+.callout-info {
+  background: #e8f0fe;
+  border: 1px solid #aecbfa;
+  color: #174ea6;
+}
+
 /* ── Export row ──────────────────────────────────────────────────────── */
 .export-row {
   display: flex;

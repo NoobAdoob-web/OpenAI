@@ -78,6 +78,48 @@
       <div class="crawl-status" id="crawl-status"></div>
     </div>
 
+    <!-- Deep Scrape section -->
+    <div class="section" id="deep-section">
+      <label class="deep-master">
+        <input type="checkbox" id="deep-toggle">
+        <span class="deep-master-label">🔍 Deep Scrape <span class="deep-sub">— open each post for full data</span></span>
+      </label>
+
+      <div id="deep-options" style="display:none">
+        <div class="deep-grid">
+          <label class="deep-opt"><input type="checkbox" id="deep-date" checked> Date posted</label>
+          <label class="deep-opt"><input type="checkbox" id="deep-likes" checked> Likes</label>
+          <label class="deep-opt"><input type="checkbox" id="deep-comments" checked> Comments (count)</label>
+          <label class="deep-opt"><input type="checkbox" id="deep-shares" checked> Shares</label>
+          <label class="deep-opt deep-opt-wide"><input type="checkbox" id="deep-commenttext"> Comment text <span class="deep-rare">(rare — pulls actual comments)</span></label>
+        </div>
+
+        <div class="deep-row">
+          <label class="lbl">Max posts:</label>
+          <input type="number" id="deep-max" value="50" min="1" max="2000" class="num-input">
+          <label class="lbl">Delay (sec):</label>
+          <input type="number" id="deep-delay" value="3" min="1" max="30" class="num-input">
+        </div>
+
+        <div class="callout callout-warn">
+          <strong>⚠ Before you start:</strong>
+          <ul>
+            <li>Opens every post one-by-one — <b>slower</b> (≈ your delay × number of posts).</li>
+            <li>You must be <b>logged in</b> to the platform in this browser.</li>
+            <li><b>Instagram &amp; YouTube shares are not public</b> — that column stays blank there.</li>
+            <li>Going too fast can trigger anti-bot checks. Keep a 3s+ delay.</li>
+            <li>Runs on the posts already loaded above — scroll first to load more.</li>
+          </ul>
+        </div>
+
+        <div class="deep-row">
+          <button id="btn-deep-start" class="btn btn-primary">▶ Start Deep Scrape</button>
+          <button id="btn-deep-stop" class="btn btn-danger" style="display:none">■ Stop</button>
+        </div>
+        <div class="crawl-status" id="deep-status"></div>
+      </div>
+    </div>
+
     <!-- Export -->
     <div class="export-row">
       <button id="btn-csv" class="btn btn-export btn-csv" disabled>

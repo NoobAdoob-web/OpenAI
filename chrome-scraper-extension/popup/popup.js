@@ -133,6 +133,112 @@ function bindUI() {
   $('btn-stop-crawl').addEventListener('click', onStopCrawl);
   $('btn-csv').addEventListener('click', downloadCSV);
   $('btn-xlsx').addEventListener('click', downloadXLSX);
+  $('deep-toggle').addEventListener('change', onDeepToggle);
+  $('btn-deep-start').addEventListener('click', onDeepStart);
+  $('btn-deep-stop').addEventListener('click', onDeepStop);
+}
+
+// ── Deep Scrape ──────────────────────────────────────────────────────────
+let deepRunning = false;
+
+function onDeepToggle() {
+  $('deep-options').style.display = $('deep-toggle').checked ? '' : 'none';
+}
+
+async function onDeepStart() {
+  if (deepRunning) return;
+
+  // Collect post URLs from the rows we already have
+  const urls = exportRows.map(r => r['URL']).filter(u => u && /^https?:/.test(u));
+  if (urls.length === 0) {
+    setDeepStatus('No post links found. Detect/scroll a social profile first.', 'error');
+    return;
+  }
+
+  const options = {
+    date: $('deep-date').checked,
+    likes: $('deep-likes').checked,
+    comments: $('deep-comments').checked,
+    shares: $('deep-shares').checked,
+    commentText: $('deep-commenttext').checked,
+    maxComments: 20,
+  };
+  if (!options.date && !options.likes && !options.comments && !options.shares && !options.commentText) {
+    setDeepStatus('Pick at least one field to collect.', 'error');
+    return;
+  }
+
+  const maxPosts = parseInt($('deep-max').value) || 50;
+  const delayMs = (parseInt($('deep-delay').value) || 3) * 1000;
+  const targetUrls = urls.slice(0, maxPosts);
+
+  deepRunning = true;
+  $('btn-deep-start').style.display = 'none';
+  $('btn-deep-stop').style.display = 'inline-flex';
+  setDeepStatus(`Starting… ${targetUrls.length} posts to open`);
+
+  // Ensure "Comment Text" column exists in export if requested
+  if (options.commentText && !exportHeaders.includes('Comment Text')) {
+    exportHeaders = insertBefore(exportHeaders, 'URL', 'Comment Text');
+  }
+
+  await chrome.runtime.sendMessage({
+    action: 'startDeepScrape',
+    tabId,
+    urls: targetUrls,
+    options,
+    delayMs,
+  }).catch(() => {});
+}
+
+async function onDeepStop() {
+  await chrome.runtime.sendMessage({ action: 'stopDeepScrape', tabId }).catch(() => {});
+  endDeep();
+  setDeepStatus(`Stopped — ${countEnriched()} posts enriched`, '');
+}
+
+function endDeep() {
+  deepRunning = false;
+  $('btn-deep-stop').style.display = 'none';
+  $('btn-deep-start').style.display = 'inline-flex';
+}
+
+function applyDeepResult(url, fields) {
+  const row = exportRows.find(r => r['URL'] === url);
+  if (!row || !fields) return;
+  if (fields.Date)     row['Date'] = fields.Date;
+  if (fields.Likes)    { row['Likes'] = fields.Likes; row['Likes (number)'] = toNum(fields.Likes); }
+  if (fields.Comments) { row['Comments'] = fields.Comments; row['Comments (number)'] = toNum(fields.Comments); }
+  if (fields.Shares)   { row['Shares'] = fields.Shares; row['Shares (number)'] = toNum(fields.Shares); }
+  if (fields.CommentText) row['Comment Text'] = fields.CommentText;
+}
+
+function countEnriched() {
+  return exportRows.filter(r => r['Likes'] || r['Comments'] || r['Shares'] || r['Comment Text']).length;
+}
+
+function toNum(s) {
+  if (!s) return '';
+  const t = String(s).replace(/,/g, '').trim();
+  const m = t.match(/([\d]+(?:\.[\d]+)?)\s*([KMB])?/i);
+  if (!m) return '';
+  let n = parseFloat(m[1]);
+  if (isNaN(n)) return '';
+  const suf = (m[2] || '').toUpperCase();
+  if (suf === 'K') n *= 1e3; else if (suf === 'M') n *= 1e6; else if (suf === 'B') n *= 1e9;
+  return String(Math.round(n));
+}
+
+function insertBefore(arr, before, item) {
+  const i = arr.indexOf(before);
+  if (i < 0) return [...arr, item];
+  return [...arr.slice(0, i), item, ...arr.slice(i)];
+}
+
+function setDeepStatus(msg, cls = '') {
+  const el = $('deep-status');
+  el.textContent = msg;
+  el.className = 'crawl-status' + (cls ? ' ' + cls : '');
 }
 
 async function onTryAnother() {
@@ -280,6 +386,24 @@ function listenMessages() {
       if (exportRows.length > 0 && currentData.headers.length > 0) {
         renderPreview({ headers: currentData.headers, rows: exportRows });
       }
+    }
+
+    if (msg.type === 'deepProgress') {
+      applyDeepResult(msg.url, msg.fields);
+      const errNote = msg.fields && msg.fields._error ? ` (last: ${msg.fields._error})` : '';
+      setDeepStatus(`Deep scraping… ${msg.done}/${msg.total} posts${errNote}`);
+      updateExportButtons();
+      // Live-refresh the preview so the user sees fields filling in
+      renderPreview({ headers: exportHeaders.length ? exportHeaders : currentData.headers, rows: exportRows });
+    }
+
+    if (msg.type === 'deepComplete') {
+      // Apply any results not already applied
+      if (msg.results) Object.keys(msg.results).forEach(u => applyDeepResult(u, msg.results[u]));
+      endDeep();
+      setDeepStatus(`✓ Done — ${msg.count} posts opened, ${countEnriched()} enriched`, 'done');
+      updateExportButtons();
+      renderPreview({ headers: exportHeaders.length ? exportHeaders : currentData.headers, rows: exportRows });
     }
   });
 }
