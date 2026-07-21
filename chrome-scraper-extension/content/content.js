@@ -72,31 +72,47 @@
       if (visible(el)) containers.add(el);
     });
 
-    // ── 3. Image/video grids (Instagram reels, Pinterest, any photo grid) ──
-    // Walk up from EVERY img/video — does NOT require images to be inside <a>
-    // tags. Skip visible() on media elements themselves: Instagram lazy-loads
-    // with src="" → 0x0 bbox, so visible() would wrongly reject them. Instead
-    // check notHidden() on the media element and visible() on the container.
-    document.querySelectorAll('img, video').forEach(media => {
-      if (!notHidden(media)) return;
-      let el = media.parentElement;
-      for (let i = 0; i < 12 && el && el !== document.body; i++, el = el.parentElement) {
-        if (!notHidden(el)) continue;
-        // Count children that contain at least one media element
-        const mediaChildren = [...el.children].filter(c =>
-          c.tagName === 'IMG' || c.tagName === 'VIDEO' ||
-          c.querySelector('img, video')
-        );
-        // Require the container itself to have a real rendered size
-        if (mediaChildren.length >= 3) {
-          const r = el.getBoundingClientRect();
-          if (r.width > 0 || r.height > 0) containers.add(el);
+    // ── 3. Image/video grids — direct detection, bypasses sig_of grouping ──
+    // Walk up from every img/video to find the CLOSEST ancestor with 3+ media-
+    // containing children. Adds that container straight to results so hashed/
+    // unique CSS class names (Instagram, TikTok) can't break detection.
+    // Uses notHidden() not visible() for media elements because lazy-loaded
+    // images have src="" → 0×0 bbox and would fail visible().
+    {
+      const seenMediaContainers = new Set();
+      document.querySelectorAll('img, video').forEach(media => {
+        if (!notHidden(media)) return;
+        let el = media.parentElement;
+        for (let i = 0; i < 14 && el && el !== document.body; i++, el = el.parentElement) {
+          if (!notHidden(el) || seenMediaContainers.has(el) || usedEls.has(el)) continue;
+          const mediaChildren = [...el.children].filter(c =>
+            c.tagName === 'IMG' || c.tagName === 'VIDEO' || c.querySelector('img, video')
+          );
+          if (mediaChildren.length >= 3) {
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 || r.height > 0) {
+              seenMediaContainers.add(el);
+              usedEls.add(el);
+              // Score: more children = better; also add to containers for sig_of pass
+              const avgF = mediaChildren.reduce((s, c) => s + countLeaves(c), 0) / mediaChildren.length;
+              results.push({
+                element: el,
+                type: 'list',
+                items: mediaChildren,
+                score: mediaChildren.length * Math.max(avgF, 1),
+                rows: mediaChildren.length,
+                cols: Math.round(Math.max(avgF, 1))
+              });
+              break; // stop at the closest (most specific) ancestor
+            }
+          }
         }
-      }
-    });
+      });
+    }
 
     // Recursively find the first level of repeating children inside any container.
     // Depth 12 handles Instagram-style deeply-nested grids (role="main" → 8 wrapper divs → grid).
+    // Also falls back to media-children grouping when sig_of hashes differ across items.
     function processAsContainer(parent, depth) {
       if (depth > 12 || usedEls.has(parent)) return;
       if (parent === document.body || parent === document.documentElement) return;
@@ -116,7 +132,7 @@
       groups.forEach(group => {
         if (group.length < 3 || usedEls.has(parent)) return;
         const avgFields = group.reduce((s, el) => s + countLeaves(el), 0) / group.length;
-        if (avgFields < 0.5) return; // allow image-only grids (1 img = 1 field)
+        if (avgFields < 0.5) return;
         usedEls.add(parent);
         dominated = true;
         results.push({
@@ -129,7 +145,27 @@
         });
       });
 
-      // No repeating group in direct children → drill deeper into each child
+      // Fallback: sig_of grouping failed (hashed class names) — try grouping by media children
+      if (!dominated && !usedEls.has(parent)) {
+        const mediaKids = children.filter(c =>
+          c.tagName === 'IMG' || c.tagName === 'VIDEO' || c.querySelector('img, video')
+        );
+        if (mediaKids.length >= 3) {
+          usedEls.add(parent);
+          dominated = true;
+          const avgF = mediaKids.reduce((s, c) => s + countLeaves(c), 0) / mediaKids.length;
+          results.push({
+            element: parent,
+            type: 'list',
+            items: mediaKids,
+            score: mediaKids.length * Math.max(avgF, 1),
+            rows: mediaKids.length,
+            cols: Math.round(Math.max(avgF, 1))
+          });
+        }
+      }
+
+      // No group found → drill deeper into each child
       if (!dominated) {
         children.forEach(child => processAsContainer(child, depth + 1));
       }
