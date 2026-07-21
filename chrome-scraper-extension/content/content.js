@@ -18,6 +18,12 @@
   let _tabId = null;        // set by popup on first message
   let _highlightedEl = null; // MUST be declared here (before bootstrap) — see note below
 
+  // Module constants — MUST be declared before bootstrap (which calls detect →
+  // buildCandidates → extractSocialRows). A `const` used before its declaration
+  // line executes throws a temporal-dead-zone ReferenceError, so they live here.
+  const SOCIAL_COLUMNS = ['Caption', 'Views', 'Likes', 'Comments', 'Shares', 'Date', 'URL', 'Thumbnail'];
+  const NUM_RE = /^[\d][\d.,]*\s*[KMB]?$/i;  // "1,234", "12.3K", "4.5M", "893K"
+
   // ─── Bootstrap ───────────────────────────────────────────────────────────
   // Register the message listener FIRST, before anything that could throw.
   // If detection/overlay code throws during bootstrap, the listener must still
@@ -50,6 +56,27 @@
   function buildCandidates() {
     const results = [];
     const usedEls = new Set();
+
+    // ── 0. Social platform extraction (YouTube / Instagram / Facebook / LinkedIn)
+    // Highest priority: if we're on a known social platform, extract semantic
+    // fields (Views, Likes, Comments, Shares, Date, Caption, URL) directly.
+    try {
+      const platform = detectPlatform();
+      if (platform) {
+        const soc = extractSocialRows(platform);
+        if (soc && soc.rows.length > 0) {
+          results.push({
+            element: soc.container || document.body,
+            type: 'social',
+            platform,
+            _social: soc,
+            score: 1e9,               // always win over generic detection
+            rows: soc.rows.length,
+            cols: soc.headers.length
+          });
+        }
+      }
+    } catch (e) { console.warn('IDS social extract failed', e); }
 
     // ── 1. HTML <table> elements ──────────────────────────────────────────
     document.querySelectorAll('table').forEach(table => {
@@ -273,9 +300,10 @@
       });
     }
 
-    // Sort best first, skip root elements
+    // Sort best first, skip root elements — but never drop a social candidate
+    // (its container can legitimately be <body> when posts are top-level).
     return results
-      .filter(c => c.element !== document.body && c.element !== document.documentElement)
+      .filter(c => c.type === 'social' || (c.element !== document.body && c.element !== document.documentElement))
       .sort((a, b) => b.score - a.score)
       .slice(0, 30);
   }
@@ -321,12 +349,288 @@
   function extractData(candidate) {
     if (!candidate) return { headers: [], rows: [] };
     try {
+      if (candidate.type === 'social') {
+        // Re-extract fresh each call so infinite-scroll picks up new items
+        const soc = extractSocialRows(candidate.platform);
+        return { headers: soc.headers, rows: soc.rows };
+      }
       return candidate.type === 'table'
         ? extractTable(candidate.element)
         : extractList(candidate.items || [...candidate.element.children].filter(visible));
     } catch (_) {
       return { headers: [], rows: [] };
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  SOCIAL MEDIA EXTRACTION  (YouTube · Instagram · Facebook · LinkedIn)
+  //  Produces a fixed schema so the Excel/CSV always has the same columns.
+  //  (SOCIAL_COLUMNS and NUM_RE are declared in the top state block to avoid
+  //   a temporal-dead-zone crash when bootstrap runs before this point.)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  function detectPlatform() {
+    const h = location.hostname;
+    if (/youtube\.com|youtu\.be/.test(h)) return 'youtube';
+    if (/instagram\.com/.test(h)) return 'instagram';
+    if (/facebook\.com|fb\.com|fb\.watch/.test(h)) return 'facebook';
+    if (/linkedin\.com/.test(h)) return 'linkedin';
+    return null;
+  }
+
+  function emptyRow() {
+    const r = {};
+    SOCIAL_COLUMNS.forEach(c => { r[c] = ''; });
+    return r;
+  }
+
+  function extractSocialRows(platform) {
+    let rows = [];
+    let container = null;
+    try {
+      if (platform === 'youtube')   { const o = extractYouTube();   rows = o.rows; container = o.container; }
+      else if (platform === 'instagram') { const o = extractInstagram(); rows = o.rows; container = o.container; }
+      else if (platform === 'facebook')  { const o = extractFacebook();  rows = o.rows; container = o.container; }
+      else if (platform === 'linkedin')  { const o = extractLinkedIn();  rows = o.rows; container = o.container; }
+    } catch (e) { console.warn('IDS platform extractor error', e); }
+
+    // Dedupe by URL (fallback to caption) and drop totally-empty rows
+    const seen = new Set();
+    rows = rows.filter(r => {
+      const hasData = r.URL || r.Caption || r.Views || r.Likes || r.Comments;
+      if (!hasData) return false;
+      const key = r.URL || r.Caption || JSON.stringify(r);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return { headers: SOCIAL_COLUMNS.slice(), rows, container };
+  }
+
+  // ── Shared count helpers ───────────────────────────────────────────────
+  function isCountText(t) {
+    t = t.trim();
+    return t.length > 0 && t.length < 12 && NUM_RE.test(t);
+  }
+
+  // Scan a card for number-like leaves and classify them by nearby SVG/aria labels.
+  // hint = 'views' means an unlabeled single number is treated as a view count (reels).
+  function grabCounts(card, hint) {
+    const res = { views: '', likes: '', comments: '', shares: '' };
+    if (!card) return res;
+
+    const leaves = [...card.querySelectorAll('span, div, strong, em')]
+      .filter(e => e.children.length === 0 && isCountText(e.textContent));
+
+    const unlabeled = [];
+    leaves.forEach(e => {
+      const txt = e.textContent.trim();
+      // Look for a label from a nearby svg[aria-label] or aria-label attribute
+      let label = '';
+      const scopes = [e, e.parentElement, e.parentElement?.parentElement,
+                      e.previousElementSibling, e.nextElementSibling].filter(Boolean);
+      for (const s of scopes) {
+        const svg = s.matches?.('svg[aria-label]') ? s : s.querySelector?.('svg[aria-label]');
+        const al = svg?.getAttribute('aria-label') || s.getAttribute?.('aria-label') || '';
+        if (al) { label = al.toLowerCase(); break; }
+      }
+      if (/view|play|watch/.test(label) && !res.views) res.views = txt;
+      else if (/like|reaction|react/.test(label) && !res.likes) res.likes = txt;
+      else if (/comment/.test(label) && !res.comments) res.comments = txt;
+      else if (/share|repost|send/.test(label) && !res.shares) res.shares = txt;
+      else unlabeled.push(txt);
+    });
+
+    // Positional fallback for unlabeled numbers
+    if (unlabeled.length) {
+      if (hint === 'views' && !res.views) { res.views = unlabeled.shift(); }
+      if (!res.likes && unlabeled.length) res.likes = unlabeled.shift();
+      if (!res.comments && unlabeled.length) res.comments = unlabeled.shift();
+      if (!res.shares && unlabeled.length) res.shares = unlabeled.shift();
+    }
+    return res;
+  }
+
+  // ── YouTube ────────────────────────────────────────────────────────────
+  // /@channel/videos — grid gives Title, Views, Upload date, URL, Thumbnail.
+  // (Likes / comments / shares are only on the individual watch page.)
+  function extractYouTube() {
+    const items = [...document.querySelectorAll(
+      'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, ' +
+      'ytm-rich-item-renderer, ytd-reel-item-renderer'
+    )];
+    let container = items[0]?.parentElement || null;
+
+    const rows = items.map(it => {
+      const row = emptyRow();
+      const titleEl = it.querySelector(
+        '#video-title, #video-title-link, a#video-title, a.yt-simple-endpoint#video-title'
+      );
+      row.Caption = (titleEl?.getAttribute('title') || titleEl?.textContent || '').trim();
+
+      const link = titleEl?.href
+        || it.querySelector('a#thumbnail')?.href
+        || it.querySelector('a[href*="/watch"], a[href*="/shorts/"]')?.href || '';
+      row.URL = link;
+
+      const img = it.querySelector('img');
+      row.Thumbnail = img?.src || img?.getAttribute('data-thumb') || '';
+
+      const meta = [...it.querySelectorAll(
+        '#metadata-line span, .inline-metadata-item, .ytd-video-meta-block span'
+      )].map(s => s.textContent.trim()).filter(Boolean);
+      meta.forEach(m => {
+        if (/view/i.test(m) && !row.Views) row.Views = m;
+        else if (/(ago|hour|day|week|month|year|minute|second)/i.test(m) && !row.Date) row.Date = m;
+      });
+
+      // Fallback: parse the aria-label ("Title by Channel 1,234 views 2 days ago …")
+      const aria = titleEl?.getAttribute('aria-label') || '';
+      if (!row.Views) { const vm = aria.match(/([\d,]+)\s*views?/i); if (vm) row.Views = vm[1] + ' views'; }
+      if (!row.Date)  { const dm = aria.match(/(\d+\s+(?:hour|day|week|month|year)s?\s+ago)/i); if (dm) row.Date = dm[1]; }
+
+      return row;
+    });
+
+    return { rows, container };
+  }
+
+  // ── Instagram ──────────────────────────────────────────────────────────
+  // /user/reels/ or /user/  — grid gives Views (reels) or Likes+Comments
+  // (posts, on hover), URL, Thumbnail, and partial caption from img alt.
+  function extractInstagram() {
+    const isReels = /\/reels\/?/.test(location.pathname);
+    const anchors = [...document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"], a[href*="/tv/"]')];
+    let container = anchors[0]?.closest('main, [role="main"]') || anchors[0]?.parentElement || null;
+
+    const rows = anchors.map(a => {
+      const href = a.getAttribute('href') || '';
+      if (!href) return null;
+      const row = emptyRow();
+      row.URL = makeAbsolute(href);
+
+      // The visual card is usually the anchor or a wrapping div containing the img
+      const card = a.closest('div[class]') || a.parentElement || a;
+      const img = a.querySelector('img') || card.querySelector('img');
+      row.Thumbnail = img?.src || bgImageUrl(card) || '';
+      const alt = img?.getAttribute('alt') || '';
+      row.Caption = cleanIgAlt(alt);
+      // Instagram bakes the post date into the alt text ("... on January 1, 2024.")
+      const dm = alt.match(/on\s+([A-Z][a-z]+\s+\d{1,2},\s+\d{4})/);
+      if (dm) row.Date = dm[1];
+
+      const counts = grabCounts(card, isReels ? 'views' : null);
+      row.Views = counts.views;
+      row.Likes = counts.likes;
+      row.Comments = counts.comments;
+      row.Shares = counts.shares;
+      // Instagram posts (non-reels) show likes+comments; if we only found one
+      // unlabeled number on a non-reels grid, it is the like count.
+      if (!isReels && !row.Likes && row.Views) { row.Likes = row.Views; row.Views = ''; }
+
+      return row;
+    }).filter(Boolean);
+
+    return { rows, container };
+  }
+
+  // Instagram alt text looks like "Photo by NAME on January 01, 2024. May be
+  // an image of ...". Strip the boilerplate; keep any useful remainder.
+  function cleanIgAlt(alt) {
+    if (!alt) return '';
+    // Strip Instagram's auto-generated accessibility boilerplate:
+    //   "Photo by NAME on January 1, 2024. May be an image of ..."
+    let s = alt
+      .replace(/^(Photo|Video|Reel)\s+(shared\s+)?by\s+.*?\son\s+[A-Z][a-z]+\s+\d{1,2},\s+\d{4}\.\s*/i, '')
+      .replace(/^(Photo|Video|Reel)\s+(shared\s+)?by\s+[^.]*\.\s*/i, '')
+      .replace(/^May be an?\s+(image|photo|video)\s+of\s*/i, '')
+      .trim();
+    return s.length > 1 ? s : alt.trim();
+  }
+
+  // ── Facebook ───────────────────────────────────────────────────────────
+  // /page/reels/ — grid gives Views, URL, Thumbnail (background-image).
+  function extractFacebook() {
+    const anchors = [...document.querySelectorAll('a[href*="/reel/"], a[href*="/watch"], a[href*="/videos/"]')];
+    let container = anchors[0]?.closest('[role="main"]') || anchors[0]?.parentElement || null;
+
+    const rows = anchors.map(a => {
+      const href = a.getAttribute('href') || '';
+      if (!href) return null;
+      const row = emptyRow();
+      row.URL = makeAbsolute(href.split('?')[0]);
+
+      const card = a.closest('div[class]') || a.parentElement || a;
+      const img = card.querySelector('img');
+      row.Thumbnail = (img?.src) || bgImageUrl(card) || '';
+      row.Caption = (img?.getAttribute('alt') || '').trim();
+
+      const counts = grabCounts(card, 'views');
+      row.Views = counts.views;
+      row.Likes = counts.likes;
+      row.Comments = counts.comments;
+      row.Shares = counts.shares;
+      return row;
+    }).filter(Boolean);
+
+    return { rows, container };
+  }
+
+  // ── LinkedIn ───────────────────────────────────────────────────────────
+  // Feed / activity — richest grid: Caption, Reactions, Comments, Reposts,
+  // relative Date, and post URL (built from the activity URN).
+  function extractLinkedIn() {
+    const posts = [...document.querySelectorAll(
+      '.feed-shared-update-v2, div.feed-shared-update-v2, [data-urn*="urn:li:activity"], .occludable-update'
+    )];
+    let container = posts[0]?.parentElement || null;
+
+    const rows = posts.map(post => {
+      const row = emptyRow();
+
+      // URL from activity URN
+      let urn = post.getAttribute('data-urn') || '';
+      if (!/activity/.test(urn)) {
+        const child = post.querySelector('[data-urn*="urn:li:activity"]');
+        urn = child?.getAttribute('data-urn') || '';
+      }
+      if (urn) row.URL = `https://www.linkedin.com/feed/update/${urn}/`;
+
+      // Caption
+      const cap = post.querySelector(
+        '.update-components-text, .feed-shared-update-v2__description, ' +
+        '.feed-shared-text, .update-components-update-v2__commentary'
+      );
+      row.Caption = (cap?.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 500);
+
+      // Date (relative, e.g. "2d", "1w") — from the actor sub-description
+      const sub = post.querySelector(
+        '.update-components-actor__sub-description, .feed-shared-actor__sub-description, time'
+      );
+      if (sub) {
+        const t = (sub.innerText || sub.textContent || '').trim();
+        const m = t.match(/(\d+\s*(?:s|m|h|d|w|mo|y|hour|day|week|month|year)s?)\b/i);
+        row.Date = m ? m[1] : t.split('•')[0].trim().slice(0, 30);
+      }
+
+      // Social counts
+      const counts = post.querySelector('.social-details-social-counts');
+      if (counts) {
+        const react = counts.querySelector(
+          '.social-details-social-counts__reactions-count, .social-details-social-counts__social-proof-fallback-number'
+        );
+        row.Likes = (react?.innerText || '').trim();
+        [...counts.querySelectorAll('li, button, span')].forEach(el => {
+          const t = (el.innerText || '').trim();
+          if (/comment/i.test(t) && !row.Comments) { const m = t.match(/[\d.,]+/); if (m) row.Comments = m[0]; }
+          if (/repost/i.test(t) && !row.Shares)   { const m = t.match(/[\d.,]+/); if (m) row.Shares = m[0]; }
+        });
+      }
+      return row;
+    }).filter(r => r.Caption || r.URL || r.Likes);
+
+    return { rows, container };
   }
 
   function extractTable(table) {
