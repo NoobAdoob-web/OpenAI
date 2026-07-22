@@ -17,6 +17,7 @@
   let crawlActive = false;
   let _tabId = null;        // set by popup on first message
   let _highlightedEl = null; // MUST be declared here (before bootstrap) — see note below
+  let popupOpen = false;    // true only while the extension popup is open
 
   // Module constants — MUST be declared before bootstrap (which calls detect →
   // buildCandidates → extractSocialRows). A `const` used before its declaration
@@ -40,6 +41,7 @@
   // crashed the whole script here and left the listener unregistered, which is
   // why pages WITH detectable data wrongly showed "No data detected".)
   registerMessageListener();
+  registerPopupConnection();
   try { createOverlays(); } catch (e) { console.warn('IDS createOverlays failed', e); }
   try { checkPendingCrawl(); } catch (e) { console.warn('IDS checkPendingCrawl failed', e); }
   try { detect(); } catch (e) { console.warn('IDS initial detect failed', e); }
@@ -55,7 +57,8 @@
     currentIndex = 0;
     if (candidates.length > 0) {
       currentData = extractData(candidates[0]);
-      try { showHighlight(candidates[0].element); } catch (_) {}
+      // Only draw the highlight box while the popup is open (see popupOpen).
+      if (popupOpen) { try { showHighlight(candidates[0].element); } catch (_) {} }
     } else {
       currentData = { headers: [], rows: [] };
       try { hideHighlight(); } catch (_) {}
@@ -1250,6 +1253,28 @@
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+  // ─── Popup connection tracking ───────────────────────────────────────────
+  // The popup opens a port when it launches; when it closes, the port
+  // disconnects. We only show the orange highlight box while the popup is open,
+  // so ordinary browsing never gets a border drawn on the page.
+  function registerPopupConnection() {
+    try {
+      chrome.runtime.onConnect.addListener(port => {
+        if (port.name !== 'ids-popup') return;
+        popupOpen = true;
+        // Re-highlight the current candidate now that the popup is open
+        if (candidates.length > 0) {
+          try { showHighlight(candidates[currentIndex]?.element || candidates[0].element); } catch (_) {}
+        }
+        port.onDisconnect.addListener(() => {
+          popupOpen = false;
+          try { hideHighlight(); } catch (_) {}
+          if (pickerActive) { try { stopPicker(); } catch (_) {} }
+        });
+      });
+    } catch (_) {}
+  }
+
   // ─── Message Listener ────────────────────────────────────────────────────
   // Wrapped in a hoisted function so bootstrap can register it FIRST, before
   // any code that might throw. This guarantees the popup can always reach us.
@@ -1263,8 +1288,11 @@
         break;
 
       case 'detect':
+        // A 'detect' only ever comes from the popup → the popup is open.
+        popupOpen = true;
         try { detect(); } catch (e) { console.warn('IDS detect failed', e); }
         if (candidates.length > 0) {
+          try { showHighlight(candidates[currentIndex]?.element || candidates[0].element); } catch (_) {}
           sendResponse({ data: currentData, count: candidates.length, currentIndex });
         } else {
           // SPA (Instagram/React/Vue): content may still be rendering.
@@ -1274,6 +1302,9 @@
               await sleep(delay);
               detect();
               if (candidates.length > 0) break;
+            }
+            if (candidates.length > 0) {
+              try { showHighlight(candidates[currentIndex]?.element || candidates[0].element); } catch (_) {}
             }
             sendResponse({ data: currentData, count: candidates.length, currentIndex });
           })();

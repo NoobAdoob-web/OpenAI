@@ -15,11 +15,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   tabId = tab.id;
 
   await ensureContentScript();
+  openHighlightPort();         // tells the page to show the highlight only while open
   await restoreTabState();     // check for saved selector / crawl data
   await detectPage();
   bindUI();
   listenMessages();
 });
+
+// Open a port to the content script. While this port is alive the page shows
+// the orange highlight box; when the popup closes the port disconnects and the
+// content script removes the border. Keeps ordinary browsing border-free.
+function openHighlightPort() {
+  try { chrome.tabs.connect(tabId, { name: 'ids-popup' }); } catch (_) {}
+}
 
 // ── Ensure content script is injected ────────────────────────────────────
 async function ensureContentScript() {
