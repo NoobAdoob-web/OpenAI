@@ -445,6 +445,45 @@
     return String(Math.round(n));
   }
 
+  // ── Embedded-date helpers (basic grid: recover upload date from page JSON) ──
+  // Instagram/Facebook ship each post's upload timestamp inside the profile
+  // page's own <script> JSON. We read it so the DATE column fills on the grid,
+  // without needing Deep Scrape.
+  let _scriptBlobCache = null;
+  function pageScriptBlob() {
+    if (_scriptBlobCache !== null) return _scriptBlobCache;
+    let b = '';
+    try {
+      document.querySelectorAll('script:not([src])').forEach(s => { b += '\n' + (s.textContent || ''); });
+    } catch (_) {}
+    _scriptBlobCache = b;
+    return b;
+  }
+
+  function unixToDateStr(n) {
+    const num = parseInt(n, 10);
+    if (!num) return '';
+    const ms = num < 1e12 ? num * 1000 : num; // seconds vs milliseconds
+    try { return new Date(ms).toISOString().slice(0, 10); } catch (_) { return ''; }
+  }
+
+  // Find the upload timestamp CLOSEST (by index distance) to a post's code/id
+  // token in the page JSON — so adjacent posts don't all grab the first date.
+  function findTimestampNear(blob, token) {
+    if (!blob || !token) return '';
+    const ti = blob.indexOf('"' + token + '"');
+    if (ti < 0) return '';
+    const re = /"(?:taken_at_timestamp|taken_at|creation_time|publish_time|created_time|device_timestamp)":(\d{9,13})/g;
+    let m, best = null, bestDist = Infinity;
+    while ((m = re.exec(blob)) !== null) {
+      const d = Math.abs(m.index - ti);
+      if (d < bestDist) { bestDist = d; best = m[1]; }
+      if (m.index > ti && d > bestDist && bestDist < 400) break; // moving away, good enough
+    }
+    // Only trust a timestamp that sits within the same JSON object (~800 chars)
+    return best && bestDist < 800 ? unixToDateStr(best) : '';
+  }
+
   // ── Shared count helpers ───────────────────────────────────────────────
   function isCountText(t) {
     t = t.trim();
@@ -563,6 +602,7 @@
     const isReels = /\/reels\/?/.test(location.pathname);
     const anchors = [...document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"], a[href*="/tv/"]')];
     let container = anchors[0]?.closest('main, [role="main"]') || anchors[0]?.parentElement || null;
+    const blob = pageScriptBlob();  // for embedded upload dates
 
     const rows = anchors.map(a => {
       const href = a.getAttribute('href') || '';
@@ -591,9 +631,14 @@
         if (txt.length) cap = txt.sort((a, b) => b.length - a.length)[0].slice(0, 300);
       }
       row.Caption = cap;
-      // Instagram bakes the post date into the alt text ("... on January 1, 2024.")
+      // Date: (1) alt text "... on January 1, 2024.", else (2) upload timestamp
+      // from the page's embedded JSON, matched by the post's shortcode.
       const dm = alt.match(/on\s+([A-Z][a-z]+\s+\d{1,2},\s+\d{4})/);
       if (dm) row.Date = dm[1];
+      if (!row.Date) {
+        const cm = href.match(/\/(?:reel|p|tv)\/([^/?]+)/);
+        if (cm) row.Date = findTimestampNear(blob, cm[1]);
+      }
 
       const counts = grabCounts(card, isReels ? 'views' : null);
       row.Views = counts.views;
@@ -629,6 +674,7 @@
   function extractFacebook() {
     const anchors = [...document.querySelectorAll('a[href*="/reel/"], a[href*="/watch"], a[href*="/videos/"]')];
     let container = anchors[0]?.closest('[role="main"]') || anchors[0]?.parentElement || null;
+    const blob = pageScriptBlob();  // for embedded upload dates
 
     const rows = anchors.map(a => {
       const href = a.getAttribute('href') || '';
@@ -646,6 +692,10 @@
       row.Likes = counts.likes;
       row.Comments = counts.comments;
       row.Shares = counts.shares;
+
+      // Upload date from embedded JSON, matched by the reel/video id
+      const idm = href.match(/\/(?:reel|videos)\/(\d+)/) || href.match(/[?&]v=(\d+)/);
+      if (idm) row.Date = findTimestampNear(blob, idm[1]) || row.Date;
       return row;
     }).filter(Boolean);
 
