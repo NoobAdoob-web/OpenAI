@@ -574,8 +574,23 @@
       const card = a.closest('div[class]') || a.parentElement || a;
       const img = a.querySelector('img') || card.querySelector('img');
       row.Thumbnail = img?.src || bgImageUrl(card) || '';
-      const alt = img?.getAttribute('alt') || '';
-      row.Caption = cleanIgAlt(alt);
+
+      // Caption (grid best-effort) — reels tiles often have no img alt, so pull
+      // from several sources. Deep Scrape later replaces this with the FULL
+      // caption from the post page. Sources: img alt, img aria-label, the anchor's
+      // aria-label/title, then any longer text node inside the tile.
+      const alt = img?.getAttribute('alt')
+        || img?.getAttribute('aria-label')
+        || a.getAttribute('aria-label')
+        || a.getAttribute('title') || '';
+      let cap = cleanIgAlt(alt);
+      if (!cap) {
+        const txt = [...card.querySelectorAll('span, div')]
+          .map(e => (e.children.length === 0 ? e.textContent.trim() : ''))
+          .filter(t => t.length > 8 && !/^[\d.,]+[KMB]?$/.test(t) && !/^\d/.test(t));
+        if (txt.length) cap = txt.sort((a, b) => b.length - a.length)[0].slice(0, 300);
+      }
+      row.Caption = cap;
       // Instagram bakes the post date into the alt text ("... on January 1, 2024.")
       const dm = alt.match(/on\s+([A-Z][a-z]+\s+\d{1,2},\s+\d{4})/);
       if (dm) row.Date = dm[1];

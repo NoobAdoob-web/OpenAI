@@ -41,8 +41,12 @@ Excel / CSV.
 ------------------------------------------------------------------------
 3. DEEP SCRAPE  (full metrics: likes, comments, shares, date)
 ------------------------------------------------------------------------
-On Instagram, Facebook and YouTube, likes/comments/shares live INSIDE
-each post -- not on the grid. Deep Scrape opens each post to read them.
+On Instagram, Facebook and YouTube, the grid only shows part of the data
+(a reel tile shows views but no caption; a post tile shows a caption
+fragment but no views). The FULL record -- caption, views, likes, comments,
+shares and date -- lives INSIDE each post. Deep Scrape opens each post and
+reads all of it, so you get every column filled regardless of whether you
+started on the Posts tab or the Reels tab.
 
 1. Do a basic scrape first (section 2) so the post list is loaded.
 2. Tick "Deep Scrape".

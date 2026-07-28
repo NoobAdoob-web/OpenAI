@@ -214,6 +214,8 @@ function endDeep() {
 function applyDeepResult(url, fields) {
   const row = exportRows.find(r => r['URL'] === url);
   if (!row || !fields) return;
+  // Full caption from the post's own page beats the grid's alt-text fragment
+  if (fields.Caption && fields.Caption.length > (row['Caption'] || '').length) row['Caption'] = fields.Caption;
   if (fields.Date)     row['Date'] = fields.Date;
   if (fields.Likes)    { row['Likes'] = fields.Likes; row['Likes (number)'] = toNum(fields.Likes); }
   if (fields.Comments) { row['Comments'] = fields.Comments; row['Comments (number)'] = toNum(fields.Comments); }

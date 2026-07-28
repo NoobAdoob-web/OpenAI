@@ -287,6 +287,43 @@ function extractPostDetails(options) {
     if (v) out.Views = v;
   }
 
+  // ═══════════════════ CAPTION (ALWAYS — the key fix) ═══════════════════
+  // The full caption lives in the post's embedded JSON regardless of whether
+  // it's a post or a reel, so deep scrape gets it consistently for both.
+  {
+    // decode a JSON string body (handles \n, \", \uXXXX escapes)
+    const dec = (raw) => { try { return JSON.parse('"' + raw + '"'); } catch (_) { return raw.replace(/\\n/g, ' ').replace(/\\"/g, '"'); } };
+    const S = '((?:[^"\\\\]|\\\\.)*)'; // a JSON string body with escapes
+    let cap = '';
+    if (isIG) {
+      cap = firstMatch([
+        new RegExp('"edge_media_to_caption":\\{"edges":\\[\\{"node":\\{"text":"' + S + '"'),
+        new RegExp('"caption":\\{[^}]*"text":"' + S + '"'),
+        new RegExp('"caption":"' + S + '"'),
+        new RegExp('"accessibility_caption":"' + S + '"'),
+      ]);
+    } else if (isFB) {
+      cap = firstMatch([
+        new RegExp('"message":\\{"text":"' + S + '"'),
+        new RegExp('"title":\\{"text":"' + S + '"'),
+        new RegExp('"description":\\{"text":"' + S + '"'),
+      ]);
+    } else if (isYT) {
+      cap = firstMatch([
+        new RegExp('"title":\\{"runs":\\[\\{"text":"' + S + '"'),
+        new RegExp('"title":\\{"simpleText":"' + S + '"'),
+        new RegExp('"videoPrimaryInfoRenderer":\\{"title":\\{"runs":\\[\\{"text":"' + S + '"'),
+      ]);
+      if (!cap && document.title) cap = document.title.replace(/\s*-\s*YouTube\s*$/, '');
+    }
+    // Universal fallbacks that work on any platform's post page
+    if (!cap) {
+      const og = document.querySelector('meta[property="og:description"], meta[property="og:title"], meta[name="description"]');
+      cap = og?.getAttribute('content') || '';
+    }
+    if (cap) out.Caption = dec(cap).trim().replace(/\s+/g, ' ').slice(0, 2000);
+  }
+
   // ═══════════════════ COMMENT TEXT (top N) ═══════════════════
   if (options.commentText) {
     const max = options.maxComments || 20;
