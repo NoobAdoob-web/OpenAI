@@ -16,8 +16,8 @@
   <!-- Empty state -->
   <div id="empty-state" class="empty-state" style="display:none">
     <div class="empty-icon">🔍</div>
-    <p>No data tables detected on this page.</p>
-    <p class="hint">Try navigating to a page with tables, lists, or repeated data rows.</p>
+    <p>No posts detected on this page yet.</p>
+    <p class="hint">Open a profile's <b>Videos</b> / <b>Reels</b> / <b>Posts</b> tab (YouTube, Instagram, Facebook or LinkedIn), scroll down a little, then reopen this extension.</p>
   </div>
 
   <!-- Loading state -->
@@ -44,6 +44,18 @@
       </div>
     </div>
 
+    <!-- How to use -->
+    <details class="help-box" id="help-box">
+      <summary>ℹ️ How to use this extension</summary>
+      <ol class="help-steps">
+        <li>Open a profile page — e.g. a YouTube channel's <b>Videos</b>, an Instagram <b>Reels</b> tab, a Facebook page's Reels, or your LinkedIn feed.</li>
+        <li>Set <b>Number of scrolls</b> and click <b>Start scraping</b> to auto-scroll and load more posts.</li>
+        <li>Want likes / comments / shares that aren't on the grid? Tick <b>Deep Scrape</b>, choose the fields, and start it — it opens each post to read the full data.</li>
+        <li>Click <b>Download Excel</b> (or CSV) to save your data.</li>
+      </ol>
+      <p class="help-note">Tip: stay logged in to the platform. Keep a 3s+ delay in Deep Scrape to avoid being rate-limited.</p>
+    </details>
+
     <!-- Preview table -->
     <div class="preview-wrap">
       <div class="preview-scroll">
@@ -52,26 +64,14 @@
       <div class="preview-footer" id="preview-footer"></div>
     </div>
 
-    <!-- Pagination section -->
+    <!-- Scraping section -->
     <div class="section">
-      <div class="section-title">Pagination</div>
-
-      <div class="row-flex" id="picker-row">
-        <button id="btn-locate-next" class="btn btn-secondary" title="Click an element on the page to use as the 'Next' button">
-          ⊕ Locate Next Button
-        </button>
-        <span class="pagination-or">or</span>
-        <button id="btn-infinite-scroll" class="btn btn-secondary btn-scroll" title="Scroll down to load more content (for infinite-scroll pages like Instagram)">
-          ↓ Infinite Scroll
-        </button>
-        <span class="selector-display" id="selector-display">Not set</span>
-        <button id="btn-clear-selector" class="btn btn-ghost" title="Clear" style="display:none">✕</button>
-      </div>
+      <div class="section-title">Load more posts</div>
 
       <div class="row-flex">
-        <label class="lbl">Max pages:</label>
-        <input type="number" id="input-max-pages" value="100" min="1" max="9999" class="num-input">
-        <button id="btn-start-crawl" class="btn btn-primary" disabled>▶ Start Crawling</button>
+        <label class="lbl">Number of scrolls:</label>
+        <input type="number" id="input-scrolls" value="20" min="1" max="500" class="num-input">
+        <button id="btn-start-crawl" class="btn btn-primary">▶ Start scraping</button>
         <button id="btn-stop-crawl" class="btn btn-danger" style="display:none">■ Stop</button>
       </div>
 

@@ -211,6 +211,36 @@ body {
 .crawl-status.error { color: #d93025; }
 .crawl-status.done  { color: #137333; }
 
+/* ── How-to help box ─────────────────────────────────────────────────── */
+.help-box {
+  margin: 8px 12px;
+  border: 1px solid #aecbfa;
+  background: #e8f0fe;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #174ea6;
+}
+.help-box summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  font-weight: 600;
+  user-select: none;
+  list-style: none;
+}
+.help-box summary::-webkit-details-marker { display: none; }
+.help-box[open] summary { border-bottom: 1px solid #cfe0fc; }
+.help-steps {
+  margin: 8px 10px 6px 26px;
+  padding: 0;
+  line-height: 1.55;
+}
+.help-steps li { margin-bottom: 5px; }
+.help-note {
+  margin: 0 10px 9px;
+  font-size: 11px;
+  color: #4a6fb5;
+}
+
 /* ── Deep Scrape ─────────────────────────────────────────────────────── */
 .deep-master {
   display: flex;
