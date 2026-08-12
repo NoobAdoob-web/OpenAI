@@ -26,6 +26,7 @@
   // so the exported sheet is analysis-ready without manual conversion.
   const SOCIAL_COLUMNS = [
     'Caption',
+    'Duration', 'Duration (sec)',
     'Views', 'Views (number)',
     'Likes', 'Likes (number)',
     'Comments', 'Comments (number)',
@@ -467,6 +468,40 @@
     try { return new Date(ms).toISOString().slice(0, 10); } catch (_) { return ''; }
   }
 
+  // Format seconds as a clock string: 83 → "1:23", 3725 → "1:02:05"
+  function secToClock(sec) {
+    sec = Math.round(Number(sec) || 0);
+    if (sec <= 0) return '';
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    const p = n => String(n).padStart(2, '0');
+    return h > 0 ? `${h}:${p(m)}:${p(s)}` : `${m}:${p(s)}`;
+  }
+  // "1:23" → 83 seconds
+  function clockToSec(clock) {
+    const parts = String(clock).split(':').map(Number);
+    if (parts.some(isNaN)) return '';
+    return String(parts.reduce((acc, n) => acc * 60 + n, 0));
+  }
+
+  // Find a video duration (in seconds) near a post's code/id in the page JSON.
+  // Handles seconds and millisecond keys used by IG/FB/YouTube.
+  function findDurationNear(blob, token) {
+    if (!blob || !token) return '';
+    const ti = blob.indexOf('"' + token + '"');
+    if (ti < 0) return '';
+    const re = /"(video_duration|length_in_second|playable_duration_in_ms|durationInSeconds|lengthSeconds|approxDurationMs)":"?([\d.]+)"?/g;
+    let m, best = null, bestDist = Infinity;
+    while ((m = re.exec(blob)) !== null) {
+      const d = Math.abs(m.index - ti);
+      if (d < bestDist) { bestDist = d; best = m; }
+      if (m.index > ti && d > bestDist && bestDist < 400) break;
+    }
+    if (!best || bestDist > 800) return '';
+    let sec = parseFloat(best[2]);
+    if (/_ms$|DurationMs$/i.test(best[1])) sec /= 1000; // ms → s
+    return sec > 0 ? sec : '';
+  }
+
   // Find the upload timestamp CLOSEST (by index distance) to a post's code/id
   // token in the page JSON — so adjacent posts don't all grab the first date.
   function findTimestampNear(blob, token) {
@@ -582,6 +617,10 @@
       bits.forEach(m => {
         if (/view/i.test(m) && !row.Views) row.Views = m.replace(/\s*views?/i, '').trim();
         else if (/\bago\b|Premiered|Streamed/i.test(m) && !row.Date) row.Date = m.replace(/^(Premiered|Streamed live on)\s*/i, '').trim();
+        // Duration badge on the thumbnail, e.g. "10:23" or "1:02:05"
+        else if (!row.Duration && /^\d{1,2}:\d{2}(:\d{2})?$/.test(m)) {
+          row.Duration = m; row['Duration (sec)'] = clockToSec(m);
+        }
       });
 
       // ── Fallback: parse aria-label ("… 1,234,567 views 2 days ago") ──
@@ -635,9 +674,11 @@
       // from the page's embedded JSON, matched by the post's shortcode.
       const dm = alt.match(/on\s+([A-Z][a-z]+\s+\d{1,2},\s+\d{4})/);
       if (dm) row.Date = dm[1];
-      if (!row.Date) {
-        const cm = href.match(/\/(?:reel|p|tv)\/([^/?]+)/);
-        if (cm) row.Date = findTimestampNear(blob, cm[1]);
+      const cm = href.match(/\/(?:reel|p|tv)\/([^/?]+)/);
+      if (cm) {
+        if (!row.Date) row.Date = findTimestampNear(blob, cm[1]);
+        const dsec = findDurationNear(blob, cm[1]);
+        if (dsec) { row.Duration = secToClock(dsec); row['Duration (sec)'] = String(Math.round(dsec)); }
       }
 
       const counts = grabCounts(card, isReels ? 'views' : null);
@@ -693,9 +734,13 @@
       row.Comments = counts.comments;
       row.Shares = counts.shares;
 
-      // Upload date from embedded JSON, matched by the reel/video id
+      // Upload date + duration from embedded JSON, matched by the reel/video id
       const idm = href.match(/\/(?:reel|videos)\/(\d+)/) || href.match(/[?&]v=(\d+)/);
-      if (idm) row.Date = findTimestampNear(blob, idm[1]) || row.Date;
+      if (idm) {
+        row.Date = findTimestampNear(blob, idm[1]) || row.Date;
+        const dsec = findDurationNear(blob, idm[1]);
+        if (dsec) { row.Duration = secToClock(dsec); row['Duration (sec)'] = String(Math.round(dsec)); }
+      }
       return row;
     }).filter(Boolean);
 

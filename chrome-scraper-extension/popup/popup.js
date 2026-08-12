@@ -73,6 +73,7 @@ async function detectPage() {
       renderPreview(currentData);
       updateCandidateLabel(res.currentIndex + 1, res.count);
       show('main-ui');
+      recomputeInvestment();
     } else {
       show('empty-state');
     }
@@ -135,6 +136,35 @@ function bindUI() {
   $('deep-toggle').addEventListener('change', onDeepToggle);
   $('btn-deep-start').addEventListener('click', onDeepStart);
   $('btn-deep-stop').addEventListener('click', onDeepStop);
+  $('input-cpv').addEventListener('input', recomputeInvestment);
+}
+
+// ── Cost per view → Expected Investment column ───────────────────────────
+function recomputeInvestment() {
+  const cpv = parseFloat($('input-cpv').value);
+  const has = Number.isFinite(cpv) && cpv > 0;
+
+  if (has) {
+    if (!exportHeaders.length && currentData.headers.length) exportHeaders = [...currentData.headers];
+    if (!exportHeaders.includes('Expected Investment')) {
+      exportHeaders = insertAfter(exportHeaders, 'Views (number)', 'Expected Investment');
+    }
+    exportRows.forEach(r => {
+      const views = Number(r['Views (number)']) || toNum(r['Views']) || 0;
+      r['Expected Investment'] = views ? +(cpv * views).toFixed(2) : '';
+    });
+  } else {
+    // CPV cleared → drop the column and its values
+    exportHeaders = exportHeaders.filter(h => h !== 'Expected Investment');
+    exportRows.forEach(r => { delete r['Expected Investment']; });
+  }
+  renderPreview({ headers: exportHeaders.length ? exportHeaders : currentData.headers, rows: exportRows });
+}
+
+function insertAfter(arr, after, item) {
+  const i = arr.indexOf(after);
+  if (i < 0) return [...arr, item];
+  return [...arr.slice(0, i + 1), item, ...arr.slice(i + 1)];
 }
 
 // ── Deep Scrape ──────────────────────────────────────────────────────────
@@ -207,6 +237,7 @@ function applyDeepResult(url, fields) {
   if (!row || !fields) return;
   // Full caption from the post's own page beats the grid's alt-text fragment
   if (fields.Caption && fields.Caption.length > (row['Caption'] || '').length) row['Caption'] = fields.Caption;
+  if (fields.Duration && !row['Duration']) { row['Duration'] = fields.Duration; if (fields.DurationSec) row['Duration (sec)'] = fields.DurationSec; }
   if (fields.Date)     row['Date'] = fields.Date;
   if (fields.Likes)    { row['Likes'] = fields.Likes; row['Likes (number)'] = toNum(fields.Likes); }
   if (fields.Comments) { row['Comments'] = fields.Comments; row['Comments (number)'] = toNum(fields.Comments); }
@@ -254,6 +285,7 @@ async function onTryAnother() {
       renderPreview(currentData);
       updateCandidateLabel(res.currentIndex + 1, res.count);
       updateExportButtons();
+      recomputeInvestment();
       setStatus('');
     }
   } catch (_) {}
@@ -301,6 +333,7 @@ function listenMessages() {
       setStatus(`Scroll ${msg.page}… ${exportRows.length} rows collected`);
       updateExportButtons();
       $('badge-rows').textContent = exportRows.length;
+      recomputeInvestment();
     }
 
     if (msg.type === 'crawlComplete') {
@@ -309,10 +342,7 @@ function listenMessages() {
       setStatus(`Complete — ${exportRows.length} rows collected`, 'done');
       updateExportButtons();
       $('badge-rows').textContent = exportRows.length;
-      // Refresh preview with all accumulated rows
-      if (exportRows.length > 0 && currentData.headers.length > 0) {
-        renderPreview({ headers: currentData.headers, rows: exportRows });
-      }
+      recomputeInvestment();
     }
 
     if (msg.type === 'deepProgress') {
@@ -320,8 +350,7 @@ function listenMessages() {
       const errNote = msg.fields && msg.fields._error ? ` (last: ${msg.fields._error})` : '';
       setDeepStatus(`Deep scraping… ${msg.done}/${msg.total} posts${errNote}`);
       updateExportButtons();
-      // Live-refresh the preview so the user sees fields filling in
-      renderPreview({ headers: exportHeaders.length ? exportHeaders : currentData.headers, rows: exportRows });
+      recomputeInvestment();  // also live-refreshes the preview
     }
 
     if (msg.type === 'deepComplete') {
@@ -330,7 +359,7 @@ function listenMessages() {
       endDeep();
       setDeepStatus(`✓ Done — ${msg.count} posts opened, ${countEnriched()} enriched`, 'done');
       updateExportButtons();
-      renderPreview({ headers: exportHeaders.length ? exportHeaders : currentData.headers, rows: exportRows });
+      recomputeInvestment();  // also refreshes the preview
     }
   });
 }

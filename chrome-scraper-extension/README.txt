@@ -59,6 +59,14 @@ started on the Posts tab or the Reels tab.
 
 
 ------------------------------------------------------------------------
+COST PER VIEW (CPV)
+------------------------------------------------------------------------
+Enter a Cost per view at the top (e.g. 0.30). An "Expected Investment"
+column is added = CPV x views. Example: CPV 0.30 and 10,000 views ->
+3,000. Clear the box to remove the column.
+
+
+------------------------------------------------------------------------
 GOOD TO KNOW
 ------------------------------------------------------------------------
 - Every count has a plain column ("322K") AND a number column
@@ -83,8 +91,9 @@ GOOD TO KNOW
 ------------------------------------------------------------------------
 SUPPORTED COLUMNS
 ------------------------------------------------------------------------
-Caption | Views | Views (number) | Likes | Likes (number) |
-Comments | Comments (number) | Shares | Shares (number) |
-Date | URL | Thumbnail | Comment Text (optional)
+Caption | Duration | Duration (sec) | Views | Views (number) |
+Likes | Likes (number) | Comments | Comments (number) |
+Shares | Shares (number) | Date | URL | Thumbnail |
+Expected Investment (when CPV set) | Comment Text (optional)
 
 ========================================================================

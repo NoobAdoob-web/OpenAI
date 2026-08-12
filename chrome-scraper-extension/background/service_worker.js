@@ -287,6 +287,32 @@ function extractPostDetails(options) {
     if (v) out.Views = v;
   }
 
+  // ═══════════════════ DURATION ═══════════════════
+  {
+    const clock = (sec) => {
+      sec = Math.round(Number(sec) || 0);
+      if (sec <= 0) return '';
+      const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+      const p = n => String(n).padStart(2, '0');
+      return h > 0 ? `${h}:${p(m)}:${p(s)}` : `${m}:${p(s)}`;
+    };
+    let sec = '';
+    if (isIG) { const d = firstMatch([/"video_duration":([\d.]+)/]); if (d) sec = parseFloat(d); }
+    else if (isFB) {
+      const ms = firstMatch([/"playable_duration_in_ms":(\d+)/]);
+      const s = firstMatch([/"length_in_second":(\d+)/, /"playable_duration":(\d+)/]);
+      if (ms) sec = parseInt(ms, 10) / 1000; else if (s) sec = parseInt(s, 10);
+    } else if (isYT) {
+      const ls = firstMatch([/"lengthSeconds":"(\d+)"/]);
+      const ms = firstMatch([/"approxDurationMs":"(\d+)"/]);
+      const lt = firstMatch([/"lengthText":\{[^}]*"simpleText":"([\d:]+)"/]);
+      if (ls) sec = parseInt(ls, 10);
+      else if (ms) sec = parseInt(ms, 10) / 1000;
+      else if (lt) { out.Duration = lt; out.DurationSec = String(lt.split(':').reduce((a, n) => a * 60 + (+n), 0)); }
+    }
+    if (sec) { out.Duration = clock(sec); out.DurationSec = String(Math.round(sec)); }
+  }
+
   // ═══════════════════ CAPTION (ALWAYS — the key fix) ═══════════════════
   // The full caption lives in the post's embedded JSON regardless of whether
   // it's a post or a reel, so deep scrape gets it consistently for both.

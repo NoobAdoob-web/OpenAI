@@ -211,6 +211,22 @@ body {
 .crawl-status.error { color: #d93025; }
 .crawl-status.done  { color: #137333; }
 
+/* ── Cost-per-view row ───────────────────────────────────────────────── */
+.cost-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fff8e1;
+  border-bottom: 1px solid #f0e0a8;
+  flex-wrap: wrap;
+}
+.num-input-wide { width: 84px; }
+.cost-hint {
+  font-size: 11px;
+  color: #8a6d3b;
+}
+
 /* ── How-to help box ─────────────────────────────────────────────────── */
 .help-box {
   margin: 8px 12px;
