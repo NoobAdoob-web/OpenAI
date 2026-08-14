@@ -59,6 +59,20 @@ started on the Posts tab or the Reels tab.
 
 
 ------------------------------------------------------------------------
+READ TEXT FROM IMAGES (OCR)
+------------------------------------------------------------------------
+Tick "Read text from images" and click "Read images". For each post it:
+  - extracts the on-image text        -> Image Text column
+  - buckets the content               -> Content Type column
+      (Offer-led / Product-led / Festive / Informational)
+  - detects the language              -> Image Language column
+
+Reads ENGLISH and HINDI only. Other scripts (Punjabi, Malayalam, Tamil,
+etc.) are labelled "Regional asset". Runs fully on-device (nothing leaves
+your browser); each image takes ~1-3 seconds. Scrape first, then read.
+
+
+------------------------------------------------------------------------
 COST PER VIEW (CPV)
 ------------------------------------------------------------------------
 Enter a Cost per view at the top (e.g. 0.30). An "Expected Investment"

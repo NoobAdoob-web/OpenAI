@@ -128,6 +128,37 @@
       </div>
     </div>
 
+    <!-- Image OCR section -->
+    <div class="section" id="ocr-section">
+      <label class="deep-master">
+        <input type="checkbox" id="ocr-toggle">
+        <span class="deep-master-label">🖼️ Read text from images <span class="deep-sub">— OCR + content type + language</span></span>
+      </label>
+
+      <div id="ocr-options" style="display:none">
+        <div class="deep-row">
+          <label class="lbl">Max images:</label>
+          <input type="number" id="ocr-max" value="50" min="1" max="1000" class="num-input">
+        </div>
+
+        <div class="callout callout-warn">
+          <strong>⚠ About image reading:</strong>
+          <ul>
+            <li>Adds <b>Image Text</b>, <b>Content Type</b> (Offer-led / Product-led / Festive / …) and <b>Image Language</b> columns.</li>
+            <li>Reads <b>English &amp; Hindi</b> only. Other scripts (Punjabi, Malayalam, Tamil…) are marked <b>Regional asset</b>.</li>
+            <li>Runs on-device — nothing leaves your browser — but each image takes ~1–3s.</li>
+            <li>Works on the images already loaded above — scrape first.</li>
+          </ul>
+        </div>
+
+        <div class="deep-row">
+          <button id="btn-ocr-start" class="btn btn-primary">▶ Read images</button>
+          <button id="btn-ocr-stop" class="btn btn-danger" style="display:none">■ Stop</button>
+        </div>
+        <div class="crawl-status" id="ocr-status"></div>
+      </div>
+    </div>
+
     <!-- Export -->
     <div class="export-row">
       <button id="btn-csv" class="btn btn-export btn-csv" disabled>

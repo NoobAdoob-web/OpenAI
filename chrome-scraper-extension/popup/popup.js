@@ -137,6 +137,74 @@ function bindUI() {
   $('btn-deep-start').addEventListener('click', onDeepStart);
   $('btn-deep-stop').addEventListener('click', onDeepStop);
   $('input-cpv').addEventListener('input', recomputeInvestment);
+  $('ocr-toggle').addEventListener('change', onOcrToggle);
+  $('btn-ocr-start').addEventListener('click', onOcrStart);
+  $('btn-ocr-stop').addEventListener('click', onOcrStop);
+}
+
+// ── Image OCR ────────────────────────────────────────────────────────────
+let ocrRunning = false;
+const OCR_COLUMNS = ['Image Text', 'Content Type', 'Image Language'];
+
+function onOcrToggle() {
+  $('ocr-options').style.display = $('ocr-toggle').checked ? '' : 'none';
+}
+
+async function onOcrStart() {
+  if (ocrRunning) return;
+
+  // Build the work list from rows that have a thumbnail image
+  const items = exportRows
+    .filter(r => r['Thumbnail'] && /^https?:/.test(r['Thumbnail']) && r['URL'])
+    .map(r => ({ key: r['URL'], thumb: r['Thumbnail'] }));
+  if (items.length === 0) {
+    setOcrStatus('No images found. Scrape a profile with thumbnails first.', 'error');
+    return;
+  }
+
+  const max = parseInt($('ocr-max').value) || 50;
+  const target = items.slice(0, max);
+
+  // Ensure the OCR columns exist (appended after Thumbnail)
+  if (!exportHeaders.length && currentData.headers.length) exportHeaders = [...currentData.headers];
+  OCR_COLUMNS.forEach(c => { if (!exportHeaders.includes(c)) exportHeaders.push(c); });
+
+  ocrRunning = true;
+  $('btn-ocr-start').style.display = 'none';
+  $('btn-ocr-stop').style.display = 'inline-flex';
+  setOcrStatus(`Starting… ${target.length} images to read`);
+
+  await chrome.runtime.sendMessage({ action: 'startOcr', tabId, items: target }).catch(() => {});
+}
+
+async function onOcrStop() {
+  await chrome.runtime.sendMessage({ action: 'stopOcr', tabId }).catch(() => {});
+  endOcr();
+  setOcrStatus(`Stopped — ${countOcr()} images read`, '');
+}
+
+function endOcr() {
+  ocrRunning = false;
+  $('btn-ocr-stop').style.display = 'none';
+  $('btn-ocr-start').style.display = 'inline-flex';
+}
+
+function applyOcrResult(key, fields) {
+  const row = exportRows.find(r => r['URL'] === key);
+  if (!row || !fields) return;
+  row['Image Text'] = fields.ImageText || '';
+  row['Content Type'] = fields.ContentType || '';
+  row['Image Language'] = fields.Language || '';
+}
+
+function countOcr() {
+  return exportRows.filter(r => r['Content Type']).length;
+}
+
+function setOcrStatus(msg, cls = '') {
+  const el = $('ocr-status');
+  el.textContent = msg;
+  el.className = 'crawl-status' + (cls ? ' ' + cls : '');
 }
 
 // ── Cost per view → Expected Investment column ───────────────────────────
@@ -360,6 +428,19 @@ function listenMessages() {
       setDeepStatus(`✓ Done — ${msg.count} posts opened, ${countEnriched()} enriched`, 'done');
       updateExportButtons();
       recomputeInvestment();  // also refreshes the preview
+    }
+
+    if (msg.type === 'ocrProgress') {
+      applyOcrResult(msg.key, msg.fields);
+      const errNote = msg.fields && msg.fields._err ? ` (last: ${msg.fields._err})` : '';
+      setOcrStatus(`Reading images… ${msg.done}/${msg.total}${errNote}`);
+      renderPreview({ headers: exportHeaders.length ? exportHeaders : currentData.headers, rows: exportRows });
+    }
+
+    if (msg.type === 'ocrComplete') {
+      endOcr();
+      setOcrStatus(`✓ Done — ${countOcr()} images read`, 'done');
+      renderPreview({ headers: exportHeaders.length ? exportHeaders : currentData.headers, rows: exportRows });
     }
   });
 }

@@ -59,8 +59,119 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.action === 'startOcr') {
+    startOcr(msg).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+
+  if (msg.action === 'stopOcr') {
+    OCR.active = false;
+    sendResponse({ ok: true });
+    return true;
+  }
+
   return false;
 });
+
+// ══════════════════════════════════════════════════════════════════════════
+//  IMAGE OCR — reads text from each post's image (Tesseract, English + Hindi),
+//  classifies the content type, and detects the language. Heavy work runs in
+//  an offscreen document because the service worker can't spawn Web Workers.
+// ══════════════════════════════════════════════════════════════════════════
+const OCR = { active: false };
+
+async function ensureOffscreen() {
+  try {
+    const has = await chrome.offscreen.hasDocument();
+    if (has) return;
+  } catch (_) {}
+  try {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen/ocr.html',
+      reasons: ['WORKERS'],
+      justification: 'Run on-device OCR (Tesseract) on post images.',
+    });
+  } catch (e) {
+    // Already exists / race — ignore
+  }
+}
+
+async function fetchAsDataUrl(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const blob = await resp.blob();
+  return await new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.onerror = () => rej(new Error('read failed'));
+    fr.readAsDataURL(blob);
+  });
+}
+
+async function startOcr(msg) {
+  const items = msg.items || [];   // [{ key, thumb }]
+  OCR.active = true;
+  await ensureOffscreen();
+
+  let done = 0;
+  for (const it of items) {
+    if (!OCR.active) break;
+    let text = '', conf = 0, err = '';
+    try {
+      const dataUrl = await fetchAsDataUrl(it.thumb);
+      const r = await chrome.runtime.sendMessage({ target: 'offscreen', action: 'ocr', dataUrl });
+      if (r && r.ok) { text = r.text; conf = r.conf; } else { err = (r && r.error) || 'ocr failed'; }
+    } catch (e) {
+      err = String(e).slice(0, 120);
+    }
+
+    const language = detectLanguage(text, conf);
+    const regional = language === 'Regional / Other';
+    const fields = {
+      ImageText: regional ? '(regional/other script — pack not installed)' : text,
+      ContentType: regional ? 'Regional asset' : classifyContent(text),
+      Language: language,
+      _err: err,
+    };
+    done++;
+    chrome.runtime.sendMessage({ type: 'ocrProgress', done, total: items.length, key: it.key, fields }).catch(() => {});
+  }
+
+  OCR.active = false;
+  chrome.runtime.sendMessage({ type: 'ocrComplete', count: done }).catch(() => {});
+  // Tear down the OCR worker + offscreen doc to free memory
+  try { await chrome.runtime.sendMessage({ target: 'offscreen', action: 'ocrDispose' }); } catch (_) {}
+  try { await chrome.offscreen.closeDocument(); } catch (_) {}
+}
+
+// ── Language detection (script-based; we only OCR English + Hindi) ──────────
+function detectLanguage(text, conf) {
+  if (!text) return '';
+  const devanagari = (text.match(/[ऀ-ॿ]/g) || []).length;
+  const latin = (text.match(/[A-Za-z]/g) || []).length;
+  const letters = devanagari + latin;
+  if (letters < 2) return '';
+  // Low confidence + not clearly Latin/Devanagari → a script we can't read.
+  if (conf < 55 && devanagari / (letters || 1) < 0.3) return 'Regional / Other';
+  if (devanagari >= latin && devanagari > 0) return 'Hindi';
+  if (latin > 0) return 'English';
+  return 'Regional / Other';
+}
+
+// ── Content-type classification (keyword rules; editable) ───────────────────
+function classifyContent(text) {
+  const t = (text || '').toLowerCase();
+  if (!t.trim()) return '';
+
+  const festive = /\b(diwali|deepavali|holi|eid|christmas|xmas|new year|navratri|dussehra|dasara|dashain|raksha bandhan|rakhi|onam|pongal|ganesh|ganpati|durga|puja|pooja|lohri|baisakhi|festival|festive|greetings|wishes|shubh|celebrat|happy)\b/;
+  const offer  = /(\b(sale|off|discount|offer|deal|deals|free|save|savings|flat|cashback|coupon|promo|lowest price|price drop|best price|upto|up to|buy now|shop now|limited time|mega|bumper)\b|%|₹|\brs\.?\b|\binr\b)/;
+  const product = /\b(introducing|introduc|new|launch|launching|available|now available|presenting|meet the|range|feature|features|model|series|collection|variant|edition|specs?|powered by|all[- ]new)\b/;
+
+  if (festive.test(t)) return 'Festive';
+  if (offer.test(t)) return 'Offer-led';
+  if (product.test(t)) return 'Product-led';
+  return 'Informational';
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 //  DEEP SCRAPE — opens each post URL in a hidden tab, extracts the fields the
