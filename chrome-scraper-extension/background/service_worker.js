@@ -108,6 +108,37 @@ async function fetchAsDataUrl(url) {
   });
 }
 
+// Fetch a post's page (with the user's cookies) and pull the full-resolution
+// cover image URL from its meta/JSON. YouTube maps to the maxres thumbnail.
+async function getFullResImage(postUrl) {
+  if (!postUrl) return '';
+
+  // YouTube: derive the high-res thumbnail from the video id (no fetch needed)
+  const yt = postUrl.match(/[?&]v=([\w-]{6,})/) || postUrl.match(/\/shorts\/([\w-]{6,})/);
+  if (yt) return `https://i.ytimg.com/vi/${yt[1]}/maxresdefault.jpg`;
+
+  let html = '';
+  try {
+    const resp = await fetch(postUrl, { credentials: 'include' });
+    if (!resp.ok) return '';
+    html = await resp.text();
+  } catch (_) { return ''; }
+
+  const deEnt = (s) => (s || '')
+    .replace(/&amp;/g, '&').replace(/\\u0026/g, '&').replace(/\\\//g, '/');
+
+  // og:image (handles both attribute orders)
+  let m = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+       || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+  if (m) return deEnt(m[1]);
+
+  // Instagram embedded high-res image
+  m = html.match(/"display_url":"([^"]+)"/) || html.match(/"display_src":"([^"]+)"/);
+  if (m) return deEnt(m[1]);
+
+  return '';
+}
+
 async function startOcr(msg) {
   const items = msg.items || [];   // [{ key, thumb }]
   OCR.active = true;
@@ -118,7 +149,14 @@ async function startOcr(msg) {
     if (!OCR.active) break;
     let text = '', conf = 0, err = '';
     try {
-      const dataUrl = await fetchAsDataUrl(it.thumb);
+      // Prefer the FULL-RESOLUTION cover image from the post page (much better
+      // OCR than the tiny grid thumbnail). Fall back to the thumbnail.
+      let imgUrl = it.thumb;
+      try {
+        const full = await getFullResImage(it.key);
+        if (full) imgUrl = full;
+      } catch (_) {}
+      const dataUrl = await fetchAsDataUrl(imgUrl);
       const r = await chrome.runtime.sendMessage({ target: 'offscreen', action: 'ocr', dataUrl });
       if (r && r.ok) { text = r.text; conf = r.conf; } else { err = (r && r.error) || 'ocr failed'; }
     } catch (e) {
