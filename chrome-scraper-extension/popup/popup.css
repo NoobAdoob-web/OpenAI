@@ -23,6 +23,15 @@ body {
 }
 .logo { width: 26px; height: 26px; flex-shrink: 0; }
 .title { font-size: 14px; font-weight: 700; letter-spacing: 0.3px; }
+.version {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.8;
+  background: rgba(255, 255, 255, 0.18);
+  padding: 2px 7px;
+  border-radius: 10px;
+}
 
 /* ── Empty / loading states ───────────────────────────────────────────── */
 .empty-state {

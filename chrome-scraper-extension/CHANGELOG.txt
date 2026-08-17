@@ -1,0 +1,43 @@
+========================================================================
+  INSTANT DATA SCRAPER  --  CHANGELOG
+========================================================================
+The version is shown in the popup header and set in manifest.json.
+Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
+
+
+------------------------------------------------------------------------
+v2.0.0  (current)
+------------------------------------------------------------------------
+- Image OCR: read on-image text on-device (English + Hindi), added
+  columns Image Text, Content Type (Offer-led / Product-led / Festive /
+  Informational) and Image Language. Reads each post's FULL-resolution
+  image (not the grid thumbnail) with upscale + grayscale + contrast
+  preprocessing for better accuracy. Other scripts -> "Regional asset".
+- Video Duration + Duration (sec) columns (Meta / Instagram / YouTube).
+- Cost per view (CPV) input -> Expected Investment column (CPV x views).
+- Upload date now shown in the basic grid scrape (no Deep Scrape needed).
+- Deep Scrape fills the full caption + metrics for both posts AND reels.
+- Simplified UI: removed "Locate Next Button"; one "Start scraping"
+  button with a number-of-scrolls input; added a How-to-use help box.
+- Highlight box now shows only while the popup is open.
+- Version badge shown in the popup header.
+
+------------------------------------------------------------------------
+v1.x  (earlier internal builds)
+------------------------------------------------------------------------
+- Platform extractors for YouTube / Instagram / Facebook / LinkedIn
+  (Caption, Views, Likes, Comments, Shares, Date, URL, Thumbnail) with
+  raw + numeric columns.
+- Deep Scrape mode (opens each post for likes/comments/shares/date,
+  optional comment text) via an offscreen/background pipeline.
+- Infinite-scroll collection, CSV + Excel export.
+- Fixes for lazy-loaded images, deeply-nested grids, hashed CSS class
+  names, Facebook background-image grids, YouTube's new layout, and a
+  temporal-dead-zone crash that blocked detection on pages with data.
+
+------------------------------------------------------------------------
+v1.0.0
+------------------------------------------------------------------------
+- Initial generic table / list auto-detection scraper with CSV / Excel
+  export.
+========================================================================

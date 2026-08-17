@@ -9,6 +9,8 @@ let crawling = false;
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  try { $('version-badge').textContent = 'v' + chrome.runtime.getManifest().version; } catch (_) {}
+
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = tab.id;
 
