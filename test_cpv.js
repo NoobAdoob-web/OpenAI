@@ -32,12 +32,13 @@ const { chromium } = require('playwright');
   const invIdx = out.headers.indexOf('Expected Investment');
   console.log('Header has Expected Investment:', invIdx>=0);
   console.log('Header order:', out.headers.join(' | '));
+  // Preview is now RANKED by views, so row1 = the 2M post, row2 = the 10K post
   const r0=out.rows[0], r1=out.rows[1], r2=out.rows[2];
-  console.log('Row1 (10000 views × 0.3):', r0[invIdx]);
-  console.log('Row2 (2,000,000 × 0.3):', r1[invIdx]);
+  console.log('Row1 (2,000,000 × 0.3):', r0[invIdx]);
+  console.log('Row2 (10000 × 0.3):', r1[invIdx]);
   console.log('Row3 (no views):', JSON.stringify(r2[invIdx]));
 
-  const ok = invIdx>=0 && r0[invIdx]==='3000' && r1[invIdx]==='600000' && (r2[invIdx]===''||r2[invIdx]==null) && errs.length===0;
+  const ok = invIdx>=0 && r0[invIdx]==='600000' && r1[invIdx]==='3000' && (r2[invIdx]===''||r2[invIdx]==null) && errs.length===0;
 
   // Now clear CPV → column should disappear
   await page.fill('#input-cpv','');

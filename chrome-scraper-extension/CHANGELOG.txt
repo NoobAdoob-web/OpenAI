@@ -6,7 +6,16 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.0.0  (current)
+v2.1.0  (current)
+------------------------------------------------------------------------
+- Top-performer ranking: the preview now shows posts sorted best-first
+  with a Rank column (ranked by Views, or Likes/Comments where a platform
+  has no views).
+- Excel download now has TWO tabs: "Top Performers" (ranked) and
+  "Raw Data" (exactly as scraped). CSV exports the ranked view.
+
+------------------------------------------------------------------------
+v2.0.0
 ------------------------------------------------------------------------
 - Image OCR: read on-image text on-device (English + Hindi), added
   columns Image Text, Content Type (Offer-led / Product-led / Festive /

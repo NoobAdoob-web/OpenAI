@@ -72,9 +72,10 @@ async function detectPage() {
         exportRows = [...currentData.rows];
         exportHeaders = currentData.headers;
       }
-      renderPreview(currentData);
+      refreshPreview();
       updateCandidateLabel(res.currentIndex + 1, res.count);
       show('main-ui');
+      updateExportButtons();
       recomputeInvestment();
     } else {
       show('empty-state');
@@ -82,6 +83,34 @@ async function detectPage() {
   } catch (_) {
     show('empty-state');
   }
+}
+
+// ── Ranking (top performers) ──────────────────────────────────────────────
+// Primary metric = Views, else Likes, else Comments (so LinkedIn ranks by
+// likes, video platforms by views). Returns a NEW headers/rows with a Rank
+// column, sorted best-first; the original exportRows keep their scraped order.
+function primaryMetric(row) {
+  const v = Number(row['Views (number)']); if (v) return v;
+  const l = Number(row['Likes (number)']); if (l) return l;
+  const c = Number(row['Comments (number)']); if (c) return c;
+  return -1; // no metric → sorts last, stably
+}
+
+function buildRanked(headers, rows) {
+  const indexed = rows.map((r, i) => ({ r, i, m: primaryMetric(r) }));
+  indexed.sort((a, b) => (b.m - a.m) || (a.i - b.i)); // desc, stable on ties
+  const rankedRows = indexed.map((o, k) => Object.assign({ 'Rank': String(k + 1) }, o.r));
+  return { headers: ['Rank', ...headers], rows: rankedRows };
+}
+
+function currentHeaders() {
+  return exportHeaders.length ? exportHeaders : currentData.headers;
+}
+
+// Render the preview as the ranked (Top Performers) view.
+function refreshPreview() {
+  if (!exportRows.length) return;
+  renderPreview(buildRanked(currentHeaders(), exportRows));
 }
 
 // ── Render preview table ──────────────────────────────────────────────────
@@ -228,7 +257,7 @@ function recomputeInvestment() {
     exportHeaders = exportHeaders.filter(h => h !== 'Expected Investment');
     exportRows.forEach(r => { delete r['Expected Investment']; });
   }
-  renderPreview({ headers: exportHeaders.length ? exportHeaders : currentData.headers, rows: exportRows });
+  refreshPreview();
 }
 
 function insertAfter(arr, after, item) {
@@ -352,7 +381,7 @@ async function onTryAnother() {
       currentData = res.data;
       exportRows = [...currentData.rows];
       exportHeaders = currentData.headers;
-      renderPreview(currentData);
+      refreshPreview();
       updateCandidateLabel(res.currentIndex + 1, res.count);
       updateExportButtons();
       recomputeInvestment();
@@ -436,13 +465,13 @@ function listenMessages() {
       applyOcrResult(msg.key, msg.fields);
       const errNote = msg.fields && msg.fields._err ? ` (last: ${msg.fields._err})` : '';
       setOcrStatus(`Reading images… ${msg.done}/${msg.total}${errNote}`);
-      renderPreview({ headers: exportHeaders.length ? exportHeaders : currentData.headers, rows: exportRows });
+      refreshPreview();
     }
 
     if (msg.type === 'ocrComplete') {
       endOcr();
       setOcrStatus(`✓ Done — ${countOcr()} images read`, 'done');
-      renderPreview({ headers: exportHeaders.length ? exportHeaders : currentData.headers, rows: exportRows });
+      refreshPreview();
     }
   });
 }
@@ -454,11 +483,10 @@ function updateExportButtons() {
   $('btn-xlsx').disabled = !has;
 }
 
-// ── CSV download ──────────────────────────────────────────────────────────
+// ── CSV download (ranked "Top Performers" view) ───────────────────────────
 function downloadCSV() {
-  const headers = exportHeaders.length ? exportHeaders : currentData.headers;
-  const rows = exportRows;
-  if (!rows.length) return;
+  if (!exportRows.length) return;
+  const { headers, rows } = buildRanked(currentHeaders(), exportRows);
 
   const esc = v => {
     const s = String(v ?? '');
@@ -479,21 +507,42 @@ function downloadCSV() {
   );
 }
 
-// ── Excel (SpreadsheetML) download ────────────────────────────────────────
+// ── Excel (SpreadsheetML) download — two tabs ─────────────────────────────
+//   Tab 1 "Raw Data"        : exactly as scraped
+//   Tab 2 "Top Performers"  : ranked (Rank column, sorted by performance)
 function downloadXLSX() {
-  const headers = exportHeaders.length ? exportHeaders : currentData.headers;
-  const rows = exportRows;
-  if (!rows.length) return;
+  if (!exportRows.length) return;
 
   const x = v => String(v ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-
   const isNum = v => v !== '' && v !== null && v !== undefined && !isNaN(Number(v));
 
-  let xml = `<?xml version="1.0" encoding="UTF-8"?>
+  function worksheet(name, headers, rows) {
+    let s = ` <Worksheet ss:Name="${x(name)}">\n  <Table>\n`;
+    s += '   <Row>\n';
+    headers.forEach(h => { s += `    <Cell ss:StyleID="h"><Data ss:Type="String">${x(h)}</Data></Cell>\n`; });
+    s += '   </Row>\n';
+    rows.forEach((row, i) => {
+      const style = i % 2 === 1 ? ' ss:StyleID="e"' : '';
+      s += '   <Row>\n';
+      headers.forEach(h => {
+        const v = row[h] ?? '';
+        const type = isNum(v) ? 'Number' : 'String';
+        s += `    <Cell${style}><Data ss:Type="${type}">${x(v)}</Data></Cell>\n`;
+      });
+      s += '   </Row>\n';
+    });
+    s += '  </Table>\n </Worksheet>\n';
+    return s;
+  }
+
+  const rawHeaders = currentHeaders();
+  const ranked = buildRanked(rawHeaders, exportRows);
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
  xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -508,31 +557,7 @@ function downloadXLSX() {
    <Interior ss:Color="#F8F9FA" ss:Pattern="Solid"/>
   </Style>
  </Styles>
- <Worksheet ss:Name="Sheet1">
-  <Table>\n`;
-
-  // Header row
-  xml += '   <Row>\n';
-  headers.forEach(h => {
-    xml += `    <Cell ss:StyleID="h"><Data ss:Type="String">${x(h)}</Data></Cell>\n`;
-  });
-  xml += '   </Row>\n';
-
-  // Data rows
-  rows.forEach((row, i) => {
-    const style = i % 2 === 1 ? ' ss:StyleID="e"' : '';
-    xml += '   <Row>\n';
-    headers.forEach(h => {
-      const v = row[h] ?? '';
-      const type = isNum(v) ? 'Number' : 'String';
-      xml += `    <Cell${style}><Data ss:Type="${type}">${x(v)}</Data></Cell>\n`;
-    });
-    xml += '   </Row>\n';
-  });
-
-  xml += `  </Table>
- </Worksheet>
-</Workbook>`;
+${worksheet('Top Performers', ranked.headers, ranked.rows)}${worksheet('Raw Data', rawHeaders, exportRows)}</Workbook>`;
 
   triggerDownload(xml, 'application/vnd.ms-excel;charset=utf-8', `scraped_data_${ts()}.xls`);
 }
