@@ -2,7 +2,7 @@
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
     "@tesseract.js-data/hin": "^1.0.0",
-    "playwright": "^1.61.1",
+    "playwright": "^1.62.1",
     "tesseract.js": "^7.0.0",
     "tesseract.js-core": "^6.1.2"
   }
