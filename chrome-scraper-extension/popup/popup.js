@@ -107,10 +107,117 @@ function currentHeaders() {
   return exportHeaders.length ? exportHeaders : currentData.headers;
 }
 
+// ── Analysis (works on basic-scrape data: views + dates) ──────────────────
+// Parse the many date formats we collect into a real Date (or null):
+//   ISO "2024-03-15", "2024-03-15T..", "January 1, 2024", relative "2 days ago",
+//   "2d" / "3w" / "1mo" / "1y" (LinkedIn/YouTube short + long forms).
+function parseDateLoose(s) {
+  if (!s) return null;
+  s = String(s).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  if (/[A-Za-z]+\s+\d{1,2},\s*\d{4}/.test(s)) { const d = Date.parse(s); if (!isNaN(d)) return new Date(d); }
+  // relative — longest unit tokens first so "mo" beats "m"
+  m = s.toLowerCase().match(/(\d+)\s*(seconds?|sec|minutes?|min|hours?|hr|days?|weeks?|months?|mo|years?|yr|[smhdwy])\b/);
+  if (m) {
+    const n = +m[1], u = m[2];
+    const MS = {
+      s: 1e3, sec: 1e3, second: 1e3, seconds: 1e3,
+      m: 6e4, min: 6e4, minute: 6e4, minutes: 6e4,
+      h: 36e5, hr: 36e5, hour: 36e5, hours: 36e5,
+      d: 864e5, day: 864e5, days: 864e5,
+      w: 6048e5, week: 6048e5, weeks: 6048e5,
+      mo: 2629746e3, month: 2629746e3, months: 2629746e3,
+      y: 31556952e3, yr: 31556952e3, year: 31556952e3, years: 31556952e3,
+    };
+    const ms = MS[u]; if (ms) return new Date(Date.now() - n * ms);
+  }
+  return null;
+}
+
+function fmtDate(d) {
+  if (!d || isNaN(d)) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function median(nums) {
+  if (!nums.length) return 0;
+  const a = [...nums].sort((x, y) => x - y);
+  const mid = Math.floor(a.length / 2);
+  return a.length % 2 ? a[mid] : Math.round((a[mid - 1] + a[mid]) / 2);
+}
+
+function computeAnalysis(rows) {
+  const views = rows.map(r => Number(r['Views (number)'])).filter(v => v > 0);
+  const dates = rows.map(r => parseDateLoose(r['Date'])).filter(Boolean);
+  dates.sort((a, b) => a - b);
+  const earliest = dates[0] || null, latest = dates[dates.length - 1] || null;
+  const spanDays = earliest && latest ? Math.max(1, Math.round((latest - earliest) / 864e5)) : 0;
+
+  const total = views.reduce((s, v) => s + v, 0);
+  const durSecs = rows.map(r => Number(r['Duration (sec)'])).filter(v => v > 0);
+
+  // Best post = highest views
+  let best = null, bestV = -1;
+  rows.forEach(r => { const v = Number(r['Views (number)']) || 0; if (v > bestV) { bestV = v; best = r; } });
+
+  return {
+    count: rows.length,
+    withViews: views.length,
+    earliest: fmtDate(earliest),
+    latest: fmtDate(latest),
+    spanDays,
+    totalViews: total,
+    avgViews: views.length ? Math.round(total / views.length) : 0,
+    medianViews: median(views),
+    postsPerWeek: spanDays ? +(rows.length / (spanDays / 7)).toFixed(1) : 0,
+    avgDurationSec: durSecs.length ? Math.round(durSecs.reduce((s, v) => s + v, 0) / durSecs.length) : 0,
+    topCaption: (best && (best['Caption'] || best['URL'])) || '',
+    topViews: bestV > 0 ? bestV : 0,
+  };
+}
+
+function numFmt(n) {
+  n = Number(n) || 0;
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + 'K';
+  return String(n);
+}
+
+function secFmt(sec) {
+  sec = Math.round(sec) || 0; if (sec <= 0) return '—';
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function renderAnalysis() {
+  const box = $('analysis-box');
+  if (!exportRows.length) { box.style.display = 'none'; return; }
+  const a = computeAnalysis(exportRows);
+  const range = a.earliest && a.latest
+    ? (a.earliest === a.latest ? a.earliest : `${a.earliest} → ${a.latest}`)
+    : 'n/a';
+  const item = (label, val, wide) =>
+    `<div class="an-item${wide ? ' an-wide' : ''}"><span class="an-label">${label}</span><span class="an-val" title="${String(val).replace(/"/g, '')}">${val}</span></div>`;
+
+  box.innerHTML =
+    item('Posts', a.count) +
+    item('Date range', range, true) +
+    (a.spanDays ? item('Span', `${a.spanDays} days`) : '') +
+    (a.postsPerWeek ? item('Posts / week', a.postsPerWeek) : '') +
+    (a.withViews ? item('Avg views', numFmt(a.avgViews)) : '') +
+    (a.withViews ? item('Median views', numFmt(a.medianViews)) : '') +
+    (a.withViews ? item('Total views', numFmt(a.totalViews)) : '') +
+    (a.avgDurationSec ? item('Avg duration', secFmt(a.avgDurationSec)) : '');
+  box.style.display = 'grid';
+}
+
 // Render the preview as the ranked (Top Performers) view.
 function refreshPreview() {
   if (!exportRows.length) return;
   renderPreview(buildRanked(currentHeaders(), exportRows));
+  renderAnalysis();
 }
 
 // ── Render preview table ──────────────────────────────────────────────────
@@ -520,8 +627,20 @@ function downloadXLSX() {
     .replace(/"/g, '&quot;');
   const isNum = v => v !== '' && v !== null && v !== undefined && !isNaN(Number(v));
 
-  function worksheet(name, headers, rows) {
+  function worksheet(name, headers, rows, summaryPairs) {
     let s = ` <Worksheet ss:Name="${x(name)}">\n  <Table>\n`;
+    // Optional analysis block at the very top (Top Performers tab)
+    if (summaryPairs && summaryPairs.length) {
+      s += `   <Row><Cell ss:StyleID="t"><Data ss:Type="String">ANALYSIS</Data></Cell></Row>\n`;
+      summaryPairs.forEach(([label, val]) => {
+        s += '   <Row>\n';
+        s += `    <Cell ss:StyleID="s"><Data ss:Type="String">${x(label)}</Data></Cell>\n`;
+        const type = isNum(val) ? 'Number' : 'String';
+        s += `    <Cell><Data ss:Type="${type}">${x(val)}</Data></Cell>\n`;
+        s += '   </Row>\n';
+      });
+      s += '   <Row></Row>\n'; // blank spacer before the table
+    }
     s += '   <Row>\n';
     headers.forEach(h => { s += `    <Cell ss:StyleID="h"><Data ss:Type="String">${x(h)}</Data></Cell>\n`; });
     s += '   </Row>\n';
@@ -542,6 +661,22 @@ function downloadXLSX() {
   const rawHeaders = currentHeaders();
   const ranked = buildRanked(rawHeaders, exportRows);
 
+  // Analysis block for the Top Performers tab
+  const a = computeAnalysis(exportRows);
+  const summaryPairs = [
+    ['Posts', a.count],
+    ['Date range', (a.earliest && a.latest) ? (a.earliest === a.latest ? a.earliest : `${a.earliest} to ${a.latest}`) : 'n/a'],
+  ];
+  if (a.spanDays) summaryPairs.push(['Span (days)', a.spanDays]);
+  if (a.postsPerWeek) summaryPairs.push(['Posts per week', a.postsPerWeek]);
+  if (a.withViews) {
+    summaryPairs.push(['Total views', a.totalViews]);
+    summaryPairs.push(['Average views', a.avgViews]);
+    summaryPairs.push(['Median views', a.medianViews]);
+  }
+  if (a.avgDurationSec) summaryPairs.push(['Average duration', secFmt(a.avgDurationSec)]);
+  if (a.topViews) summaryPairs.push(['Top post', `${a.topCaption} (${numFmt(a.topViews)} views)`.slice(0, 200)]);
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
@@ -556,8 +691,14 @@ function downloadXLSX() {
   <Style ss:ID="e">
    <Interior ss:Color="#F8F9FA" ss:Pattern="Solid"/>
   </Style>
+  <Style ss:ID="t">
+   <Font ss:Bold="1" ss:Size="12" ss:Color="#137333"/>
+  </Style>
+  <Style ss:ID="s">
+   <Font ss:Bold="1" ss:Color="#33691E"/>
+  </Style>
  </Styles>
-${worksheet('Top Performers', ranked.headers, ranked.rows)}${worksheet('Raw Data', rawHeaders, exportRows)}</Workbook>`;
+${worksheet('Top Performers', ranked.headers, ranked.rows, summaryPairs)}${worksheet('Raw Data', rawHeaders, exportRows)}</Workbook>`;
 
   triggerDownload(xml, 'application/vnd.ms-excel;charset=utf-8', `scraped_data_${ts()}.xls`);
 }

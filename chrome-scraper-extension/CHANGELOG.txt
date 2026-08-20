@@ -6,7 +6,17 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.1.0  (current)
+v2.2.0  (current)
+------------------------------------------------------------------------
+- Analysis summary: the popup now shows a stats panel (posts, date range,
+  span, posts/week, avg/median/total views, avg duration) and the same
+  ANALYSIS block is written at the top of the Excel "Top Performers" tab.
+- Date range (earliest -> latest post) is computed so the time window of
+  the data is explicit. Handles ISO, "Month DD, YYYY", and relative dates
+  ("2 days ago", "2d/3w/1mo").
+
+------------------------------------------------------------------------
+v2.1.0
 ------------------------------------------------------------------------
 - Top-performer ranking: the preview now shows posts sorted best-first
   with a Rank column (ranked by Views, or Likes/Comments where a platform
