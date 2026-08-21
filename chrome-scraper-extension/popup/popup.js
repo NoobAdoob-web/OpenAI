@@ -288,7 +288,7 @@ function maybeFetchEndpoints() {
   const key = firstU + '|' + lastU;
   if (key === endpointMeta.key) return;                 // already done for this dataset
   endpointMeta = { key, loading: true, done: false };
-  setAnalysisNote('Fetching exact posting dates for the first & last post — this can take a few seconds…', 'loading');
+  setAnalysisNote('Opening the first & last post in the background to read their exact dates — this can take 10–20 seconds. Please wait…', 'loading');
 
   const targets = firstU === lastU ? [firstU] : [firstU, lastU];
   chrome.runtime.sendMessage({ action: 'getPostMeta', urls: targets }).then(resp => {

@@ -6,7 +6,16 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.3.0  (current)
+v2.3.1  (current)
+------------------------------------------------------------------------
+- Exact first/last-post dates now use REAL deep scraping: the extension
+  opens the first and last post each in a background tab, lets it render,
+  and reads the exact date from the live page (no fetch/guesswork). This
+  fixes Instagram where the plain fetch returned no date. Callout warns it
+  can take 10-20 seconds.
+
+------------------------------------------------------------------------
+v2.3.0
 ------------------------------------------------------------------------
 - Exact date range: after a scrape, the extension fetches the precise
   posting date of the FIRST and LAST post (one quick request each) and

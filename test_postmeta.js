@@ -1,18 +1,37 @@
-const fs=require('fs');
-const src=fs.readFileSync('chrome-scraper-extension/background/service_worker.js','utf8');
-const i=src.indexOf('async function fetchPostMeta'); const j=src.indexOf('\n}\n', src.indexOf('return { date, durationSec', i));
-let body=src.slice(i,j+2);
-let FIX=''; global.fetch=async()=>({ok:true,text:async()=>FIX});
-eval('global.fetchPostMeta='+body.replace('async function fetchPostMeta','async function'));
+// getPostMeta now opens a real tab and runs extractPostDetails (same as Deep
+// Scrape). Here we verify (a) normalizeDate and (b) that extractPostDetails
+// reads the exact date from a rendered post page — the two pieces getPostMeta
+// depends on. (The tab-opening itself is the same proven path as Deep Scrape.)
+const { chromium } = require('playwright');
+const fs = require('fs');
+const src = fs.readFileSync('chrome-scraper-extension/background/service_worker.js','utf8');
+
+// --- normalizeDate unit test (pure) ---
+const i = src.indexOf('function normalizeDate'); const j = src.indexOf('\n}\n', i);
+eval(src.slice(i, j+2).replace('function normalizeDate','global.normalizeDate = function'));
+let pass=0, fail=0;
+const t=(n,g,e)=>{const ok=g===e;console.log((ok?'✓':'❌')+' '+n+' → '+g);ok?pass++:fail++;};
+t('ISO datetime → date', normalizeDate('2024-03-15T10:30:00.000Z'), '2024-03-15');
+t('plain date', normalizeDate('2024-06-01'), '2024-06-01');
+t('Month DD, YYYY', normalizeDate('January 5, 2024'), '2024-01-05');
+t('empty', normalizeDate(''), '');
+
+// --- extractPostDetails reads Date from a rendered IG post (via tab) ---
+const s2 = src.indexOf('function extractPostDetails(options)');
+const e2 = src.indexOf('\n}\n', src.indexOf('return out;', s2));
+const fn = src.slice(s2, e2+2);
 (async()=>{
-  let pass=0,fail=0; const t=async(n,url,html,chk)=>{FIX=html;const r=await fetchPostMeta(url);const ok=chk(r);console.log((ok?'✓':'❌')+' '+n+' → '+JSON.stringify(r));ok?pass++:fail++;};
-  // IG: taken_at_timestamp 1710498600 = 2024-03-15 ; video_duration 62.5 → 63
-  await t('IG date+dur','https://www.instagram.com/reel/a/','<script>{"taken_at_timestamp":1710498600,"video_duration":62.5}</script>', r=>r.date==='2024-03-15'&&r.durationSec===63);
-  // FB creation_time 1704883200 = 2024-01-10 ; playable_duration_in_ms 95000 → 95
-  await t('FB date+dur','https://www.facebook.com/reel/1','<script>{"creation_time":1704883200,"playable_duration_in_ms":95000}</script>', r=>r.date==='2024-01-10'&&r.durationSec===95);
-  // YT publishDate + lengthSeconds
-  await t('YT date+dur','https://www.youtube.com/watch?v=a','<script>{"publishDate":"2024-05-20","lengthSeconds":"623"}</script>', r=>r.date==='2024-05-20'&&r.durationSec===623);
-  // YT ISO duration meta fallback
-  await t('YT ISO dur','https://www.youtube.com/watch?v=b','<meta itemprop="datePublished" content="2024-06-01"><meta itemprop="duration" content="PT1H2M5S">', r=>r.date==='2024-06-01'&&r.durationSec===3725);
+  const browser = await chromium.launch({ executablePath:'/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args:['--no-sandbox'] });
+  const ctx = await browser.newContext(); const page = await ctx.newPage();
+  const IG = `<!DOCTYPE html><html><body><time datetime="2024-03-15T10:30:00.000Z">Mar 15</time>
+    <script type="application/json">{"taken_at_timestamp":1710498600,"video_duration":45}</script></body></html>`;
+  await ctx.route('**/*', r=> r.request().resourceType()==='document'? r.fulfill({status:200,contentType:'text/html',body:IG}) : r.fulfill({status:200,body:''}));
+  await page.goto('https://www.instagram.com/reel/abc/',{waitUntil:'domcontentloaded'}).catch(()=>{});
+  const res = await page.evaluate((fn)=>{ eval(fn); return extractPostDetails({date:true}); }, fn);
+  const nd = normalizeDate(res.Date);
+  const ok = nd==='2024-03-15' && String(res.DurationSec)==='45';
+  console.log((ok?'✓':'❌')+' extractPostDetails via tab → Date='+res.Date+' ('+nd+') DurationSec='+res.DurationSec);
+  ok?pass++:fail++;
+  await browser.close();
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`); process.exit(fail?1:0);
 })();
