@@ -59,6 +59,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.action === 'getPostMeta') {
+    getPostMeta(msg.urls || []).then(res => sendResponse({ ok: true, meta: res }));
+    return true;
+  }
+
   if (msg.action === 'startOcr') {
     startOcr(msg).then(() => sendResponse({ ok: true }));
     return true;
@@ -110,6 +115,87 @@ async function fetchAsDataUrl(url) {
 
 // Fetch a post's page (with the user's cookies) and pull the full-resolution
 // cover image URL from its meta/JSON. YouTube maps to the maxres thumbnail.
+// Fetch exact posting date + video duration for a small set of posts (used for
+// the first & last post so the analysis date range is accurate). One HTTP fetch
+// per URL (no tab opening); reads the post page's embedded JSON / meta tags.
+async function getPostMeta(urls) {
+  const out = {};
+  for (const url of urls) {
+    if (!url) continue;
+    try { out[url] = await fetchPostMeta(url); }
+    catch (e) { out[url] = { date: '', durationSec: '', error: String(e).slice(0, 100) }; }
+  }
+  return out;
+}
+
+async function fetchPostMeta(url) {
+  const isYT = /youtube\.com|youtu\.be/.test(url);
+  const isIG = /instagram\.com/.test(url);
+  const isFB = /facebook\.com|fb\.com|fb\.watch/.test(url);
+
+  let html = '';
+  try {
+    const resp = await fetch(url, { credentials: 'include' });
+    if (resp.ok) html = await resp.text();
+  } catch (_) {}
+  if (!html) return { date: '', durationSec: '' };
+
+  const first = (patterns) => {
+    for (const re of patterns) { const m = html.match(re); if (m && m[1] != null) return String(m[1]); }
+    return '';
+  };
+  const unixToDate = (n) => {
+    const num = parseInt(n, 10); if (!num) return '';
+    const ms = num < 1e12 ? num * 1000 : num;
+    try { return new Date(ms).toISOString().slice(0, 10); } catch (_) { return ''; }
+  };
+
+  // ── date ──
+  let date = '';
+  if (isIG) {
+    const ts = first([/"taken_at_timestamp":(\d{9,13})/, /"taken_at":(\d{9,13})/]);
+    date = ts ? unixToDate(ts) : '';
+  } else if (isFB) {
+    const ts = first([/"creation_time":(\d{9,13})/, /"publish_time":(\d{9,13})/, /"created_time":(\d{9,13})/]);
+    date = ts ? unixToDate(ts) : '';
+  } else if (isYT) {
+    date = first([/"publishDate":"(\d{4}-\d{2}-\d{2})/, /"uploadDate":"(\d{4}-\d{2}-\d{2})/,
+                  /itemprop="datePublished"[^>]*content="(\d{4}-\d{2}-\d{2})/]);
+  }
+  if (!date) {
+    date = first([
+      /<meta[^>]+property="article:published_time"[^>]+content="(\d{4}-\d{2}-\d{2})/i,
+      /"datePublished":"(\d{4}-\d{2}-\d{2})/,
+      /(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}/,
+    ]);
+  }
+
+  // ── duration (seconds) ──
+  let durationSec = '';
+  if (isIG) { const d = first([/"video_duration":([\d.]+)/]); if (d) durationSec = Math.round(parseFloat(d)); }
+  else if (isFB) {
+    const ms = first([/"playable_duration_in_ms":(\d+)/]);
+    const s = first([/"length_in_second":(\d+)/, /"playable_duration":(\d+)/]);
+    if (ms) durationSec = Math.round(parseInt(ms, 10) / 1000); else if (s) durationSec = parseInt(s, 10);
+  } else if (isYT) {
+    const ls = first([/"lengthSeconds":"(\d+)"/]);
+    const ms = first([/"approxDurationMs":"(\d+)"/]);
+    if (ls) durationSec = parseInt(ls, 10); else if (ms) durationSec = Math.round(parseInt(ms, 10) / 1000);
+  }
+  if (!durationSec) {
+    // ISO 8601 duration in a meta tag: PT#H#M#S
+    const iso = first([/itemprop="duration"[^>]*content="(PT[0-9HMS]+)"/, /"duration":"(PT[0-9HMS]+)"/]);
+    if (iso) {
+      const h = +(iso.match(/(\d+)H/) || [])[1] || 0;
+      const m = +(iso.match(/(\d+)M/) || [])[1] || 0;
+      const s = +(iso.match(/(\d+)S/) || [])[1] || 0;
+      const t = h * 3600 + m * 60 + s; if (t) durationSec = t;
+    }
+  }
+
+  return { date, durationSec: durationSec || '' };
+}
+
 async function getFullResImage(postUrl) {
   if (!postUrl) return '';
 

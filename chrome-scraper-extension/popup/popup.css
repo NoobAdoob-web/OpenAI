@@ -240,6 +240,31 @@ body {
 .analysis-box .an-item .an-val { font-weight: 700; color: #1b5e20; text-align: right; }
 .analysis-box .an-wide { grid-column: 1 / -1; }
 
+.analysis-note {
+  padding: 7px 12px;
+  font-size: 11.5px;
+  background: #fef7e0;
+  border-bottom: 1px solid #fdd663;
+  color: #7c5b00;
+}
+.analysis-note.loading::before { content: '⏳ '; }
+
+.analysis-insights {
+  padding: 8px 12px;
+  background: #f1f8f4;
+  border-bottom: 1px solid #d6e9dc;
+}
+.analysis-insights .in-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #6b8e6b;
+  margin-bottom: 5px;
+}
+.analysis-insights ul { margin: 0; padding-left: 16px; }
+.analysis-insights li { font-size: 11.5px; color: #1b5e20; line-height: 1.6; }
+
 /* ── Cost-per-view row ───────────────────────────────────────────────── */
 .cost-row {
   display: flex;

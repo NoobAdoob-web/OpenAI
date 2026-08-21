@@ -6,6 +6,7 @@ let currentData = { headers: [], rows: [] }; // current-page detection
 let exportRows = [];                          // rows to export (grows during crawl)
 let exportHeaders = [];
 let crawling = false;
+let endpointMeta = { key: '', loading: false, done: false }; // first/last exact-date fetch
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -77,6 +78,7 @@ async function detectPage() {
       show('main-ui');
       updateExportButtons();
       recomputeInvestment();
+      maybeFetchEndpoints();
     } else {
       show('empty-state');
     }
@@ -175,6 +177,9 @@ function computeAnalysis(rows) {
     avgDurationSec: durSecs.length ? Math.round(durSecs.reduce((s, v) => s + v, 0) / durSecs.length) : 0,
     topCaption: (best && (best['Caption'] || best['URL'])) || '',
     topViews: bestV > 0 ? bestV : 0,
+    // Endpoint posts by scraped order (first = most recent, last = oldest loaded)
+    firstPostDate: fmtDate(parseDateLoose(rows[0] && rows[0]['Date'])) || (rows[0] && rows[0]['Date']) || '',
+    lastPostDate: fmtDate(parseDateLoose(rows[rows.length - 1] && rows[rows.length - 1]['Date'])) || (rows[rows.length - 1] && rows[rows.length - 1]['Date']) || '',
   };
 }
 
@@ -187,13 +192,55 @@ function numFmt(n) {
 
 function secFmt(sec) {
   sec = Math.round(sec) || 0; if (sec <= 0) return '—';
-  const m = Math.floor(sec / 60), s = sec % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const p = n => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${p(m)}:${p(s)}` : `${m}:${p(s)}`;
+}
+
+// Text insight pointers from whatever metrics are present (views/likes/etc).
+function buildInsights(rows) {
+  const out = [];
+  const num = (r, k) => Number(r[k]) || 0;
+  const cap = r => {
+    const c = String(r['Caption'] || r['URL'] || '').replace(/\s+/g, ' ').trim();
+    return c ? (c.length > 48 ? c.slice(0, 48) + '…' : c) : '(no caption)';
+  };
+  const maxBy = key => rows.reduce((b, r) => (num(r, key) > num(b, key) ? r : b), rows[0]);
+
+  if (rows.some(r => num(r, 'Views (number)') > 0)) {
+    const r = maxBy('Views (number)');
+    out.push(`Most viewed: “${cap(r)}” — ${numFmt(num(r, 'Views (number)'))} views`);
+  }
+  if (rows.some(r => num(r, 'Likes (number)') > 0)) {
+    const r = maxBy('Likes (number)');
+    out.push(`Most liked: “${cap(r)}” — ${numFmt(num(r, 'Likes (number)'))} likes`);
+  }
+  if (rows.some(r => num(r, 'Comments (number)') > 0)) {
+    const r = maxBy('Comments (number)');
+    out.push(`Most comments: “${cap(r)}” — ${numFmt(num(r, 'Comments (number)'))}`);
+  }
+  const rated = rows.map(r => {
+    const v = num(r, 'Views (number)');
+    const e = num(r, 'Likes (number)') + num(r, 'Comments (number)') + num(r, 'Shares (number)');
+    return { r, rate: v ? e / v : 0 };
+  }).filter(o => o.rate > 0);
+  if (rated.length) {
+    const t = rated.reduce((b, o) => (o.rate > b.rate ? o : b));
+    out.push(`Best engagement rate: “${cap(t.r)}” — ${(t.rate * 100).toFixed(1)}% (interactions ÷ views)`);
+  }
+  const durs = rows.map(r => ({ r, d: num(r, 'Duration (sec)') })).filter(o => o.d > 0);
+  if (durs.length >= 2) {
+    const hi = durs.reduce((a, b) => (b.d > a.d ? b : a));
+    const lo = durs.reduce((a, b) => (b.d < a.d ? b : a));
+    out.push(`Longest video ${secFmt(hi.d)} · shortest ${secFmt(lo.d)}`);
+  }
+  return out;
 }
 
 function renderAnalysis() {
   const box = $('analysis-box');
-  if (!exportRows.length) { box.style.display = 'none'; return; }
+  const ins = $('analysis-insights');
+  if (!exportRows.length) { box.style.display = 'none'; ins.style.display = 'none'; return; }
   const a = computeAnalysis(exportRows);
   const range = a.earliest && a.latest
     ? (a.earliest === a.latest ? a.earliest : `${a.earliest} → ${a.latest}`)
@@ -204,6 +251,8 @@ function renderAnalysis() {
   box.innerHTML =
     item('Posts', a.count) +
     item('Date range', range, true) +
+    (a.firstPostDate ? item('First post', a.firstPostDate) : '') +
+    (a.lastPostDate ? item('Last post', a.lastPostDate) : '') +
     (a.spanDays ? item('Span', `${a.spanDays} days`) : '') +
     (a.postsPerWeek ? item('Posts / week', a.postsPerWeek) : '') +
     (a.withViews ? item('Avg views', numFmt(a.avgViews)) : '') +
@@ -211,6 +260,63 @@ function renderAnalysis() {
     (a.withViews ? item('Total views', numFmt(a.totalViews)) : '') +
     (a.avgDurationSec ? item('Avg duration', secFmt(a.avgDurationSec)) : '');
   box.style.display = 'grid';
+
+  const pointers = buildInsights(exportRows);
+  if (pointers.length) {
+    ins.innerHTML = '<div class="in-title">Insights</div><ul>' +
+      pointers.map(p => `<li>${p.replace(/</g, '&lt;')}</li>`).join('') + '</ul>';
+    ins.style.display = 'block';
+  } else {
+    ins.style.display = 'none';
+  }
+}
+
+function setAnalysisNote(msg, cls) {
+  const el = $('analysis-note');
+  if (!msg) { el.style.display = 'none'; return; }
+  el.textContent = msg;
+  el.className = 'analysis-note' + (cls ? ' ' + cls : '');
+  el.style.display = 'block';
+}
+
+// Fetch exact posting dates (+ duration) for the FIRST and LAST post so the
+// date range is accurate. Runs once per dataset; warns the user it may be slow.
+function maybeFetchEndpoints() {
+  const urls = exportRows.map(r => r['URL']).filter(u => u && /^https?:/.test(u));
+  if (urls.length < 1) return;
+  const firstU = urls[0], lastU = urls[urls.length - 1];
+  const key = firstU + '|' + lastU;
+  if (key === endpointMeta.key) return;                 // already done for this dataset
+  endpointMeta = { key, loading: true, done: false };
+  setAnalysisNote('Fetching exact posting dates for the first & last post — this can take a few seconds…', 'loading');
+
+  const targets = firstU === lastU ? [firstU] : [firstU, lastU];
+  chrome.runtime.sendMessage({ action: 'getPostMeta', urls: targets }).then(resp => {
+    endpointMeta.loading = false; endpointMeta.done = true;
+    let got = false;
+    if (resp && resp.ok && resp.meta) {
+      got = applyMeta(firstU, resp.meta[firstU]) | applyMeta(lastU, resp.meta[lastU]);
+    }
+    setAnalysisNote(got ? '' : 'Couldn’t fetch exact dates — showing dates from the grid instead.', '');
+    renderAnalysis();
+  }).catch(() => {
+    endpointMeta.loading = false;
+    setAnalysisNote('Couldn’t fetch exact dates — showing dates from the grid instead.', '');
+  });
+}
+
+function applyMeta(url, meta) {
+  if (!meta) return 0;
+  const row = exportRows.find(r => r['URL'] === url);
+  if (!row) return 0;
+  let changed = 0;
+  if (meta.date) { row['Date'] = meta.date; changed = 1; }
+  if (meta.durationSec && !row['Duration (sec)']) {
+    row['Duration (sec)'] = String(meta.durationSec);
+    row['Duration'] = secFmt(meta.durationSec);
+    changed = 1;
+  }
+  return changed;
 }
 
 // Render the preview as the ranked (Top Performers) view.
@@ -549,6 +655,7 @@ function listenMessages() {
       updateExportButtons();
       $('badge-rows').textContent = exportRows.length;
       recomputeInvestment();
+      maybeFetchEndpoints();
     }
 
     if (msg.type === 'deepProgress') {
@@ -667,6 +774,8 @@ function downloadXLSX() {
     ['Posts', a.count],
     ['Date range', (a.earliest && a.latest) ? (a.earliest === a.latest ? a.earliest : `${a.earliest} to ${a.latest}`) : 'n/a'],
   ];
+  if (a.firstPostDate) summaryPairs.push(['Date of first post', a.firstPostDate]);
+  if (a.lastPostDate) summaryPairs.push(['Date of last post', a.lastPostDate]);
   if (a.spanDays) summaryPairs.push(['Span (days)', a.spanDays]);
   if (a.postsPerWeek) summaryPairs.push(['Posts per week', a.postsPerWeek]);
   if (a.withViews) {
@@ -675,7 +784,8 @@ function downloadXLSX() {
     summaryPairs.push(['Median views', a.medianViews]);
   }
   if (a.avgDurationSec) summaryPairs.push(['Average duration', secFmt(a.avgDurationSec)]);
-  if (a.topViews) summaryPairs.push(['Top post', `${a.topCaption} (${numFmt(a.topViews)} views)`.slice(0, 200)]);
+  // Text insight pointers
+  buildInsights(exportRows).forEach((p, i) => summaryPairs.push([i === 0 ? 'Insights' : '', p.slice(0, 220)]));
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>

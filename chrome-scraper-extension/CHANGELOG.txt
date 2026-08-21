@@ -6,7 +6,19 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.2.0  (current)
+v2.3.0  (current)
+------------------------------------------------------------------------
+- Exact date range: after a scrape, the extension fetches the precise
+  posting date of the FIRST and LAST post (one quick request each) and
+  uses them for the date range + "Date of first/last post". A callout
+  warns it may take a few seconds; falls back to grid dates if it can't.
+- Text insight pointers in the analysis (popup + Excel): most viewed,
+  most liked, most comments, best engagement rate, longest/shortest video.
+- Better video length: the first/last fetch also fills in duration when
+  the grid didn't have it; duration now shows h:mm:ss for long videos.
+
+------------------------------------------------------------------------
+v2.2.0
 ------------------------------------------------------------------------
 - Analysis summary: the popup now shows a stats panel (posts, date range,
   span, posts/week, avg/median/total views, avg duration) and the same
