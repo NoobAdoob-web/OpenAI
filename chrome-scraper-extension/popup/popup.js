@@ -198,43 +198,131 @@ function secFmt(sec) {
 }
 
 // Text insight pointers from whatever metrics are present (views/likes/etc).
+// ── Insight engine ────────────────────────────────────────────────────────
+// Cross-analyses captions/content against engagement (views/likes/comments/
+// shares) and surfaces PATTERNS, e.g. "Posts that mention an offer get 2.1x
+// more comments". Works on views alone (basic scrape); likes/comments/shares
+// comparisons unlock once those columns are present (deep scrape / LinkedIn).
+const STOPWORDS = new Set(('the a an and or of to in on for with your you our we is are was be by ' +
+  'this that these those it its at as from up out so no not do does can will just get got now new all ' +
+  'more most very how why what when who your youre they them their there here have has had he she his her ' +
+  'i im me my we us also then than into over under about after before best good great today day').split(' '));
+
 function buildInsights(rows) {
   const out = [];
   const num = (r, k) => Number(r[k]) || 0;
-  const cap = r => {
-    const c = String(r['Caption'] || r['URL'] || '').replace(/\s+/g, ' ').trim();
-    return c ? (c.length > 48 ? c.slice(0, 48) + '…' : c) : '(no caption)';
-  };
-  const maxBy = key => rows.reduce((b, r) => (num(r, key) > num(b, key) ? r : b), rows[0]);
+  const capText = r => String(r['Caption'] || '').replace(/\s+/g, ' ').trim();
+  const short = r => { const c = capText(r) || String(r['URL'] || ''); return c ? (c.length > 46 ? c.slice(0, 46) + '…' : c) : '(no caption)'; };
+  const avg = a => a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0;
+  const N = rows.length;
 
+  // ── Headline highlights (always) ──
+  const maxBy = key => rows.reduce((b, r) => (num(r, key) > num(b, key) ? r : b), rows[0]);
   if (rows.some(r => num(r, 'Views (number)') > 0)) {
     const r = maxBy('Views (number)');
-    out.push(`Most viewed: “${cap(r)}” — ${numFmt(num(r, 'Views (number)'))} views`);
+    out.push(`Most viewed: “${short(r)}” — ${numFmt(num(r, 'Views (number)'))} views`);
   }
   if (rows.some(r => num(r, 'Likes (number)') > 0)) {
     const r = maxBy('Likes (number)');
-    out.push(`Most liked: “${cap(r)}” — ${numFmt(num(r, 'Likes (number)'))} likes`);
+    out.push(`Most liked: “${short(r)}” — ${numFmt(num(r, 'Likes (number)'))} likes`);
   }
   if (rows.some(r => num(r, 'Comments (number)') > 0)) {
     const r = maxBy('Comments (number)');
-    out.push(`Most comments: “${cap(r)}” — ${numFmt(num(r, 'Comments (number)'))}`);
+    out.push(`Most comments: “${short(r)}” — ${numFmt(num(r, 'Comments (number)'))}`);
   }
-  const rated = rows.map(r => {
-    const v = num(r, 'Views (number)');
-    const e = num(r, 'Likes (number)') + num(r, 'Comments (number)') + num(r, 'Shares (number)');
-    return { r, rate: v ? e / v : 0 };
-  }).filter(o => o.rate > 0);
-  if (rated.length) {
-    const t = rated.reduce((b, o) => (o.rate > b.rate ? o : b));
-    out.push(`Best engagement rate: “${cap(t.r)}” — ${(t.rate * 100).toFixed(1)}% (interactions ÷ views)`);
+
+  // ── Pattern analysis (needs a handful of posts to be meaningful) ──
+  if (N < 6) {
+    out.push('Scrape/scroll more posts (6+) to unlock content-pattern insights.');
+    return out;
   }
-  const durs = rows.map(r => ({ r, d: num(r, 'Duration (sec)') })).filter(o => o.d > 0);
-  if (durs.length >= 2) {
-    const hi = durs.reduce((a, b) => (b.d > a.d ? b : a));
-    const lo = durs.reduce((a, b) => (b.d < a.d ? b : a));
-    out.push(`Longest video ${secFmt(hi.d)} · shortest ${secFmt(lo.d)}`);
+
+  const METRICS = [['views', 'Views (number)'], ['comments', 'Comments (number)'],
+                   ['likes', 'Likes (number)'], ['shares', 'Shares (number)']];
+
+  // Compare a group (predicate true) vs the rest; return a candidate insight
+  // for EACH metric that differs meaningfully (so both "more views" and "fewer
+  // comments" style stories can surface for the same group).
+  function compareGroup(pred, label) {
+    const inG = rows.filter(pred), rest = rows.filter(r => !pred(r));
+    if (inG.length < 3 || rest.length < 2) return [];
+    const cands = [];
+    for (const [name, key] of METRICS) {
+      const gv = inG.map(r => num(r, key)).filter(v => v > 0);
+      const rv = rest.map(r => num(r, key)).filter(v => v > 0);
+      if (gv.length < 3 || rv.length < 3) continue;
+      const ga = avg(gv), ra = avg(rv);
+      if (!ga || !ra) continue;
+      const ratio = ga / ra, strength = Math.abs(Math.log(ratio));
+      if (ratio >= 1.35 || ratio <= 0.74) {
+        const cmp = ratio >= 1 ? `${ratio.toFixed(1)}× more` : `${(1 / ratio).toFixed(1)}× fewer`;
+        cands.push({ label, strength,
+          text: `Posts that ${label} get ${cmp} ${name} (avg ${numFmt(Math.round(ga))} vs ${numFmt(Math.round(ra))}).` });
+      }
+    }
+    return cands;
   }
+
+  const dims = [];
+  const has = re => r => re.test(capText(r));
+  dims.push([has(/\b(sale|off|discount|offer|deal|deals|free|save|flat|cashback|coupon|promo|% ?off|lowest price|price drop|₹|\brs\.?\b)\b/i), 'mention an offer/discount']);
+  dims.push([has(/\b(diwali|holi|eid|christmas|new year|navratri|dussehra|rakhi|onam|pongal|festival|festive|wishes|greetings|happy|shubh)\b/i), 'have a festive/greeting theme']);
+  dims.push([has(/\?/), 'ask a question']);
+  dims.push([r => ((capText(r).match(/#/g) || []).length >= 4), 'use 4+ hashtags']);
+  dims.push([r => capText(r).length >= 150, 'have longer captions (150+ chars)']);
+  dims.push([r => capText(r).length > 0 && capText(r).length <= 40, 'have short captions (≤40 chars)']);
+  dims.push([has(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u), 'use emojis']);
+  dims.push([has(/@\w/), 'tag/mention an account']);
+  dims.push([has(/\b(link in bio|shop now|buy now|click|dm|comment below|tag a|share this|follow us|swipe|watch till)\b/i), 'include a call-to-action']);
+  dims.push([r => num(r, 'Duration (sec)') > 0 && num(r, 'Duration (sec)') <= 15, 'are short videos (≤15s)']);
+  dims.push([r => num(r, 'Duration (sec)') >= 60, 'are longer videos (60s+)']);
+  // OCR content type (only if OCR was run)
+  ['Offer-led', 'Product-led', 'Festive'].forEach(ct => {
+    if (rows.some(r => r['Content Type'] === ct)) dims.push([r => r['Content Type'] === ct, `have ${ct} creatives (image text)`]);
+  });
+  // Most common keyword across captions (surfaces brand/product/theme names)
+  const kw = topKeyword(rows);
+  if (kw) {
+    const kwRe = new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+    dims.push([r => kwRe.test(capText(r)), `mention “${kw}”`]);
+  }
+
+  const found = [];
+  for (const [pred, label] of dims) found.push(...compareGroup(pred, label));
+  found.sort((a, b) => b.strength - a.strength);
+
+  // Add strongest-first, but at most 2 insights per group (label) so variety
+  // stays high and one dimension can't dominate.
+  const perLabel = {};
+  const seen = new Set();
+  for (const f of found) {
+    if (out.length >= 8) break;
+    if (seen.has(f.text)) continue;
+    perLabel[f.label] = (perLabel[f.label] || 0);
+    if (perLabel[f.label] >= 2) continue;
+    perLabel[f.label]++;
+    seen.add(f.text);
+    out.push(f.text);
+  }
+
+  if (found.length === 0) out.push('No strong content patterns yet — try scraping more posts (and Deep Scrape for likes/comments).');
   return out;
+}
+
+// Most frequent non-stopword appearing across captions (document frequency),
+// used to surface a brand/product/theme keyword to correlate against metrics.
+function topKeyword(rows) {
+  const df = new Map();
+  rows.forEach(r => {
+    const text = String(r['Caption'] || '').toLowerCase()
+      .replace(/https?:\/\/\S+/g, ' ').replace(/[#@][\w.]+/g, ' ');
+    const words = new Set((text.match(/[a-z][a-z'&-]{2,}/g) || []));
+    words.forEach(w => { if (!STOPWORDS.has(w) && w.length >= 3) df.set(w, (df.get(w) || 0) + 1); });
+  });
+  const N = rows.length;
+  let best = null;
+  df.forEach((c, w) => { if (c >= 3 && c <= N - 2 && (!best || c > best.c)) best = { w, c }; });
+  return best ? best.w : '';
 }
 
 function renderAnalysis() {
@@ -263,7 +351,7 @@ function renderAnalysis() {
 
   const pointers = buildInsights(exportRows);
   if (pointers.length) {
-    ins.innerHTML = '<div class="in-title">Insights</div><ul>' +
+    ins.innerHTML = '<div class="in-title">Content Insights</div><ul>' +
       pointers.map(p => `<li>${p.replace(/</g, '&lt;')}</li>`).join('') + '</ul>';
     ins.style.display = 'block';
   } else {

@@ -6,7 +6,20 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.3.1  (current)
+v2.4.0  (current)
+------------------------------------------------------------------------
+- Content Insights: the analysis now cross-analyses captions/content against
+  engagement and surfaces PATTERNS, e.g. "Posts that mention an offer/
+  discount get 2.1x more comments" or "Posts that mention <brand> get 4x
+  more views". Dimensions include offers/discounts, festive themes,
+  questions, hashtags, caption length, emojis, @mentions, calls-to-action,
+  video length, OCR content type, and the most common caption keyword
+  (surfaces brand/product/theme names). Works on views alone (basic scrape);
+  likes/comments/shares comparisons unlock with Deep Scrape / LinkedIn.
+  Each pointer shows the actual averages so it is transparent, not a guess.
+
+------------------------------------------------------------------------
+v2.3.1
 ------------------------------------------------------------------------
 - Exact first/last-post dates now use REAL deep scraping: the extension
   opens the first and last post each in a background tab, lets it render,
