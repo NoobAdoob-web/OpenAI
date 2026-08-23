@@ -6,7 +6,15 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.4.0  (current)
+v2.4.1  (current)
+------------------------------------------------------------------------
+- Fix: "Cannot access '_scriptBlobCache' before initialization" on some
+  pages (e.g. Instagram). The grid-date cache variable was declared after
+  bootstrap ran; moved it into the top state block so detection no longer
+  throws on page load.
+
+------------------------------------------------------------------------
+v2.4.0
 ------------------------------------------------------------------------
 - Content Insights: the analysis now cross-analyses captions/content against
   engagement and surfaces PATTERNS, e.g. "Posts that mention an offer/

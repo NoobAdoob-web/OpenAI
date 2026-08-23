@@ -18,6 +18,7 @@
   let _tabId = null;        // set by popup on first message
   let _highlightedEl = null; // MUST be declared here (before bootstrap) — see note below
   let popupOpen = false;    // true only while the extension popup is open
+  let _scriptBlobCache = null; // cached page <script> text (used during bootstrap detect → TDZ-safe here)
 
   // Module constants — MUST be declared before bootstrap (which calls detect →
   // buildCandidates → extractSocialRows). A `const` used before its declaration
@@ -449,8 +450,8 @@
   // ── Embedded-date helpers (basic grid: recover upload date from page JSON) ──
   // Instagram/Facebook ship each post's upload timestamp inside the profile
   // page's own <script> JSON. We read it so the DATE column fills on the grid,
-  // without needing Deep Scrape.
-  let _scriptBlobCache = null;
+  // without needing Deep Scrape. (_scriptBlobCache is declared in the top state
+  // block above so bootstrap detect() can use it without a TDZ error.)
   function pageScriptBlob() {
     if (_scriptBlobCache !== null) return _scriptBlobCache;
     let b = '';
