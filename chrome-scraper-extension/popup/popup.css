@@ -265,6 +265,22 @@ body {
 .analysis-insights ul { margin: 0; padding-left: 16px; }
 .analysis-insights li { font-size: 11.5px; color: #1b5e20; line-height: 1.6; }
 
+/* ── Review star targets ─────────────────────────────────────────────── */
+.star-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.star-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.star-opt .star-lbl { font-size: 12px; font-weight: 700; color: #b06f00; }
+.star-opt .num-input { width: 100%; }
+
 /* ── Cost-per-view row ───────────────────────────────────────────────── */
 .cost-row {
   display: flex;

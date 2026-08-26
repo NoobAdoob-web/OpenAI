@@ -7,6 +7,8 @@ let exportRows = [];                          // rows to export (grows during cr
 let exportHeaders = [];
 let crawling = false;
 let endpointMeta = { key: '', loading: false, done: false }; // first/last exact-date fetch
+let pageUrl = '';                              // active tab URL (for review crawl)
+let reviewCrawling = false;
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -14,6 +16,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = tab.id;
+  pageUrl = tab.url || '';
 
   await ensureContentScript();
   openHighlightPort();         // tells the page to show the highlight only while open
@@ -79,6 +82,7 @@ async function detectPage() {
       updateExportButtons();
       recomputeInvestment();
       maybeFetchEndpoints();
+      toggleReviewSection();
     } else {
       show('empty-state');
     }
@@ -528,6 +532,68 @@ function bindUI() {
   $('ocr-toggle').addEventListener('change', onOcrToggle);
   $('btn-ocr-start').addEventListener('click', onOcrStart);
   $('btn-ocr-stop').addEventListener('click', onOcrStop);
+  $('btn-review-start').addEventListener('click', onReviewStart);
+  $('btn-review-stop').addEventListener('click', onReviewStop);
+}
+
+// ── Review collection by star (Amazon) ────────────────────────────────────
+// Derive the product-reviews base URL from the active tab's Amazon URL.
+function amazonReviewBase() {
+  if (!/amazon\./i.test(pageUrl)) return '';
+  const asin = pageUrl.match(/\/(?:dp|gp\/product|product-reviews|gp\/aw\/d|gp\/aw\/reviews)\/([A-Z0-9]{10})/i);
+  if (!asin) return '';
+  let host = 'www.amazon.com';
+  try { host = new URL(pageUrl).host; } catch (_) {}
+  return `https://${host}/product-reviews/${asin[1]}/`;
+}
+
+function toggleReviewSection() {
+  const show = isReviewData() && !!amazonReviewBase();
+  $('review-section').style.display = show ? '' : 'none';
+  // The infinite-scroll "Load more posts" box isn't useful on review pages
+  $('scrape-section').style.display = isReviewData() ? 'none' : '';
+}
+
+async function onReviewStart() {
+  if (reviewCrawling) return;
+  const base = amazonReviewBase();
+  if (!base) { setReviewStatus('Open an Amazon product/reviews page first.', 'error'); return; }
+
+  const targets = {
+    five_star: parseInt($('rev-5').value) || 0,
+    four_star: parseInt($('rev-4').value) || 0,
+    three_star: parseInt($('rev-3').value) || 0,
+    two_star: parseInt($('rev-2').value) || 0,
+    one_star: parseInt($('rev-1').value) || 0,
+  };
+  const total = Object.values(targets).reduce((s, v) => s + v, 0);
+  if (total === 0) { setReviewStatus('Set at least one star target (0 = skip).', 'error'); return; }
+
+  const maxPagesPerStar = parseInt($('rev-maxpages').value) || 20;
+  reviewCrawling = true;
+  $('btn-review-start').style.display = 'none';
+  $('btn-review-stop').style.display = 'inline-flex';
+  setReviewStatus(`Starting… collecting up to ${total} reviews`);
+
+  await chrome.runtime.sendMessage({ action: 'startReviewCrawl', tabId, base, targets, maxPagesPerStar, delayMs: 1500 }).catch(() => {});
+}
+
+async function onReviewStop() {
+  await chrome.runtime.sendMessage({ action: 'stopReviewCrawl', tabId }).catch(() => {});
+  endReviewCrawl();
+  setReviewStatus(`Stopped — ${exportRows.length} reviews collected`);
+}
+
+function endReviewCrawl() {
+  reviewCrawling = false;
+  $('btn-review-stop').style.display = 'none';
+  $('btn-review-start').style.display = 'inline-flex';
+}
+
+function setReviewStatus(msg, cls = '') {
+  const el = $('review-status');
+  el.textContent = msg;
+  el.className = 'crawl-status' + (cls ? ' ' + cls : '');
 }
 
 // ── Image OCR ────────────────────────────────────────────────────────────
@@ -829,6 +895,22 @@ function listenMessages() {
     if (msg.type === 'ocrComplete') {
       endOcr();
       setOcrStatus(`✓ Done — ${countOcr()} images read`, 'done');
+      refreshPreview();
+    }
+
+    if (msg.type === 'reviewProgress') {
+      setReviewStatus(`Collecting ${msg.star}★ — ${msg.got}/${msg.target} (total ${msg.total}, page ${msg.page})`);
+    }
+
+    if (msg.type === 'reviewComplete') {
+      endReviewCrawl();
+      if (msg.rows && msg.rows.length) {
+        exportRows = msg.rows;
+        exportHeaders = currentData.headers.length ? currentData.headers : Object.keys(msg.rows[0]);
+      }
+      setReviewStatus(`✓ Done — ${exportRows.length} reviews collected`, 'done');
+      updateExportButtons();
+      $('badge-rows').textContent = exportRows.length;
       refreshPreview();
     }
   });

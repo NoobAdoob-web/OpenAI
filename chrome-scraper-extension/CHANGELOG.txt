@@ -6,7 +6,19 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.6.0  (current)
+v2.7.0  (current)
+------------------------------------------------------------------------
+- Collect reviews by star (Amazon): on an Amazon product/reviews page a new
+  section lets you set how many 5★/4★/3★/2★/1★ reviews you want (0 = skip).
+  The extension opens Amazon's star-filtered review pages in the background
+  and pages through them until each target is met (or Amazon runs out),
+  collecting the maximum available. Live progress per star; Stop anytime.
+  Results replace the table and export as usual (ranked by helpful votes).
+  Note: Amazon limits very deep pagination, so huge targets may stop early
+  at what's actually available.
+
+------------------------------------------------------------------------
+v2.6.0
 ------------------------------------------------------------------------
 - Product reviews: the extension now scrapes Amazon and Flipkart reviews.
   Columns: Rating, Rating (number), Title, Review, Reviewer, Date, Verified,

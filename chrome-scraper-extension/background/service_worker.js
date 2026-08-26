@@ -75,8 +75,104 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.action === 'startReviewCrawl') {
+    startReviewCrawl(msg).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+
+  if (msg.action === 'stopReviewCrawl') {
+    REV.active = false;
+    sendResponse({ ok: true });
+    return true;
+  }
+
   return false;
 });
+
+// ══════════════════════════════════════════════════════════════════════════
+//  REVIEW CRAWL (Amazon) — walk the star-filtered review pages in a background
+//  tab until the per-star target is met. Uses Amazon's own filter URLs
+//  (?filterByStar=five_star&pageNumber=N) so we get exactly the stars asked for.
+// ══════════════════════════════════════════════════════════════════════════
+const REV = { active: false };
+
+async function startReviewCrawl(msg) {
+  const { base, targets, delayMs, maxPagesPerStar } = msg;
+  REV.active = true;
+  const all = [], seen = new Set();
+  const key = r => (r.Reviewer || '') + '|' + (r.Review || r.Title || '').slice(0, 60);
+  const gap = Math.max(800, delayMs || 1500);
+  const maxPages = maxPagesPerStar || 20;
+
+  let tab;
+  try { tab = await chrome.tabs.create({ url: 'about:blank', active: false }); }
+  catch (e) { REV.active = false; chrome.runtime.sendMessage({ type: 'reviewComplete', rows: [], error: 'could not open tab' }).catch(() => {}); return; }
+
+  const STARS = [['five_star', 5], ['four_star', 4], ['three_star', 3], ['two_star', 2], ['one_star', 1]];
+  try {
+    for (const [starKey, starNum] of STARS) {
+      const target = targets[starKey] || 0;
+      if (!target || !REV.active) continue;
+      let page = 1, got = 0;
+      while (REV.active && got < target && page <= maxPages) {
+        const url = `${base}?filterByStar=${starKey}&pageNumber=${page}&reviewerType=all_reviews&sortBy=recent`;
+        try { await chrome.tabs.update(tab.id, { url }); } catch (_) { break; }
+        await waitForComplete(tab.id, 20000);
+        await sleep(1800); // let reviews render
+
+        let rows = [];
+        try {
+          const [res] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractAmazonReviewsPage });
+          rows = (res && res.result) || [];
+        } catch (_) {}
+        if (!rows.length) break;
+
+        let added = 0;
+        for (const r of rows) {
+          if (got >= target) break;
+          const k = key(r);
+          if (!seen.has(k)) { seen.add(k); all.push(r); added++; got++; }
+        }
+        chrome.runtime.sendMessage({ type: 'reviewProgress', star: starNum, got, target, total: all.length, page }).catch(() => {});
+        if (added === 0) break;      // page had only duplicates / end of list
+        page++;
+        if (got < target && REV.active) await sleep(gap);
+      }
+    }
+  } finally {
+    try { await chrome.tabs.remove(tab.id); } catch (_) {}
+  }
+  REV.active = false;
+  chrome.runtime.sendMessage({ type: 'reviewComplete', rows: all, count: all.length }).catch(() => {});
+}
+
+// Self-contained Amazon review extractor injected into each review page.
+function extractAmazonReviewsPage() {
+  const COLS = ['Rating', 'Rating (number)', 'Title', 'Review', 'Reviewer', 'Date',
+                'Verified', 'Helpful', 'Helpful (number)', 'Variant', 'Product', 'URL'];
+  const abs = href => { if (!href) return location.href.split('?')[0]; try { return new URL(href, location.origin).href; } catch (_) { return href; } };
+  const product = (document.querySelector('[data-hook="product-link"], #productTitle, [data-hook="cr-product-title"]')?.textContent
+    || document.title.replace(/\s*[:|-].*$/, '')).trim();
+  const items = [...document.querySelectorAll('[data-hook="review"]')];
+  return items.map(it => {
+    const row = {}; COLS.forEach(c => row[c] = '');
+    const rt = (it.querySelector('[data-hook="review-star-rating"] .a-icon-alt, [data-hook="cmps-review-star-rating"] .a-icon-alt')?.textContent || '').trim();
+    row.Rating = rt; const rm = rt.match(/([\d.]+)\s*out of\s*5/i); if (rm) row['Rating (number)'] = rm[1];
+    const te = it.querySelector('[data-hook="review-title"]');
+    if (te) { const sp = [...te.querySelectorAll('span')].map(s => s.textContent.trim()).filter(t => t && !/out of 5/i.test(t) && !/^\d+(\.\d)?$/.test(t)); row.Title = (sp.pop() || te.textContent.trim()).replace(/\s+/g, ' '); }
+    row.Review = ((it.querySelector('[data-hook="review-body"]') || {}).innerText || '').trim().replace(/\s+/g, ' ');
+    row.Reviewer = (it.querySelector('.a-profile-name')?.textContent || '').trim();
+    const dt = (it.querySelector('[data-hook="review-date"]')?.textContent || '').trim(); const dm = dt.match(/on\s+(.+)$/i); row.Date = dm ? dm[1].trim() : dt;
+    row.Verified = it.querySelector('[data-hook="avp-badge"]') ? 'Yes' : '';
+    const hp = (it.querySelector('[data-hook="helpful-vote-statement"]')?.textContent || '').trim(); row.Helpful = hp;
+    const hm = hp.replace(/,/g, '').match(/(\d+)/); if (hm) row['Helpful (number)'] = hm[1]; else if (/one|a person/i.test(hp)) row['Helpful (number)'] = '1';
+    row.Variant = (it.querySelector('[data-hook="format-strip"], .review-format-strip')?.textContent || '').trim().replace(/\s+/g, ' ');
+    row.Product = product;
+    const lk = it.querySelector('[data-hook="review-title"]');
+    row.URL = lk && lk.getAttribute('href') ? abs(lk.getAttribute('href')) : location.href.split('?')[0];
+    return row;
+  }).filter(r => r.Review || r.Title);
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 //  IMAGE OCR — reads text from each post's image (Tesseract, English + Hindi),

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Instant Data Scraper",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "description": "Auto-detect and extract table and list data from any webpage. Export to CSV or Excel.",
   "icons": {
     "16": "icons/icon.svg",

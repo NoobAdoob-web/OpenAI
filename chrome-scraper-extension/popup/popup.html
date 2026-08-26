@@ -78,7 +78,7 @@
     </div>
 
     <!-- Scraping section -->
-    <div class="section">
+    <div class="section" id="scrape-section">
       <div class="section-title">Load more posts</div>
 
       <div class="row-flex">
@@ -89,6 +89,40 @@
       </div>
 
       <div class="crawl-status" id="crawl-status"></div>
+    </div>
+
+    <!-- Review collection (Amazon) -->
+    <div class="section" id="review-section" style="display:none">
+      <div class="section-title">Collect reviews — how many of each star?</div>
+
+      <div class="star-grid">
+        <label class="star-opt"><span class="star-lbl">5★</span><input type="number" id="rev-5" value="50" min="0" max="5000" class="num-input"></label>
+        <label class="star-opt"><span class="star-lbl">4★</span><input type="number" id="rev-4" value="50" min="0" max="5000" class="num-input"></label>
+        <label class="star-opt"><span class="star-lbl">3★</span><input type="number" id="rev-3" value="50" min="0" max="5000" class="num-input"></label>
+        <label class="star-opt"><span class="star-lbl">2★</span><input type="number" id="rev-2" value="50" min="0" max="5000" class="num-input"></label>
+        <label class="star-opt"><span class="star-lbl">1★</span><input type="number" id="rev-1" value="50" min="0" max="5000" class="num-input"></label>
+      </div>
+
+      <div class="row-flex">
+        <label class="lbl">Max pages / star:</label>
+        <input type="number" id="rev-maxpages" value="20" min="1" max="200" class="num-input">
+        <span class="cost-hint">0 for a star = skip it</span>
+      </div>
+
+      <div class="callout callout-warn">
+        <strong>⚠ How it works:</strong>
+        <ul>
+          <li>Opens Amazon's star-filtered review pages in the background and pages through them until each target is met.</li>
+          <li>~2s per page — larger targets take longer. Stay logged in to Amazon.</li>
+          <li>Amazon caps very deep pagination, so extremely large targets may stop early at what's available.</li>
+        </ul>
+      </div>
+
+      <div class="row-flex">
+        <button id="btn-review-start" class="btn btn-primary">▶ Collect reviews</button>
+        <button id="btn-review-stop" class="btn btn-danger" style="display:none">■ Stop</button>
+      </div>
+      <div class="crawl-status" id="review-status"></div>
     </div>
 
     <!-- Deep Scrape section -->
