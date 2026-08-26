@@ -93,8 +93,10 @@ async function detectPage() {
 // column, sorted best-first; the original exportRows keep their scraped order.
 function primaryMetric(row) {
   const v = Number(row['Views (number)']); if (v) return v;
+  const h = Number(row['Helpful (number)']); if (h) return h;   // reviews: most-helpful first
   const l = Number(row['Likes (number)']); if (l) return l;
   const c = Number(row['Comments (number)']); if (c) return c;
+  const rt = Number(row['Rating (number)']); if (rt) return rt;  // reviews with no helpful votes → by rating
   return -1; // no metric → sorts last, stably
 }
 
@@ -338,10 +340,16 @@ function topKeyword(rows) {
   return best ? best.w : '';
 }
 
+function isReviewData() {
+  const h = currentHeaders();
+  return h.includes('Rating (number)') && h.includes('Reviewer');
+}
+
 function renderAnalysis() {
   const box = $('analysis-box');
   const ins = $('analysis-insights');
   if (!exportRows.length) { box.style.display = 'none'; ins.style.display = 'none'; return; }
+  if (isReviewData()) { renderReviewAnalysis(box, ins); return; }
   const a = computeAnalysis(exportRows);
   const range = a.earliest && a.latest
     ? (a.earliest === a.latest ? a.earliest : `${a.earliest} → ${a.latest}`)
@@ -372,6 +380,40 @@ function renderAnalysis() {
   }
 }
 
+// Review-specific analysis: rating breakdown, avg rating, % verified, most helpful.
+function renderReviewAnalysis(box, ins) {
+  const rows = exportRows;
+  const ratings = rows.map(r => Number(r['Rating (number)'])).filter(v => v > 0);
+  const avg = ratings.length ? (ratings.reduce((s, v) => s + v, 0) / ratings.length) : 0;
+  const verified = rows.filter(r => /^y/i.test(String(r['Verified'] || ''))).length;
+  const dist = [5, 4, 3, 2, 1].map(star => ratings.filter(v => Math.round(v) === star).length);
+  const helpfulTop = rows.reduce((b, r) => (Number(r['Helpful (number)']) > Number((b || {})['Helpful (number)'] || -1) ? r : b), null);
+  const item = (label, val, wide) =>
+    `<div class="an-item${wide ? ' an-wide' : ''}"><span class="an-label">${label}</span><span class="an-val" title="${String(val).replace(/"/g, '')}">${val}</span></div>`;
+
+  box.innerHTML =
+    item('Reviews', rows.length) +
+    (avg ? item('Avg rating', `${avg.toFixed(2)} / 5`) : '') +
+    (rows.length ? item('Verified', `${Math.round(100 * verified / rows.length)}%`) : '') +
+    item('5★ / 4★ / 3★', `${dist[0]} / ${dist[1]} / ${dist[2]}`, true) +
+    item('2★ / 1★', `${dist[3]} / ${dist[4]}`, true);
+  box.style.display = 'grid';
+
+  const pointers = [];
+  if (avg) pointers.push(`Average rating: ${avg.toFixed(2)}/5 across ${ratings.length} reviews.`);
+  const pos = ratings.filter(v => v >= 4).length, neg = ratings.filter(v => v <= 2).length;
+  if (ratings.length) pointers.push(`${Math.round(100 * pos / ratings.length)}% positive (4–5★) · ${Math.round(100 * neg / ratings.length)}% negative (1–2★).`);
+  if (helpfulTop && Number(helpfulTop['Helpful (number)']) > 0) {
+    const t = (helpfulTop['Title'] || helpfulTop['Review'] || '').slice(0, 60);
+    pointers.push(`Most helpful review (${helpfulTop['Helpful (number)']} votes): “${t}…” — ${helpfulTop['Rating (number)']}★`);
+  }
+  if (pointers.length) {
+    ins.innerHTML = '<div class="in-title">Review Insights</div><ul>' +
+      pointers.map(p => `<li>${p.replace(/</g, '&lt;')}</li>`).join('') + '</ul>';
+    ins.style.display = 'block';
+  } else { ins.style.display = 'none'; }
+}
+
 function setAnalysisNote(msg, cls) {
   const el = $('analysis-note');
   if (!msg) { el.style.display = 'none'; return; }
@@ -383,6 +425,7 @@ function setAnalysisNote(msg, cls) {
 // Fetch exact posting dates (+ duration) for the FIRST and LAST post so the
 // date range is accurate. Runs once per dataset; warns the user it may be slow.
 function maybeFetchEndpoints() {
+  if (isReviewData()) return;   // reviews don't have per-post pages to open
   const urls = exportRows.map(r => r['URL']).filter(u => u && /^https?:/.test(u));
   if (urls.length < 1) return;
   const firstU = urls[0], lastU = urls[urls.length - 1];

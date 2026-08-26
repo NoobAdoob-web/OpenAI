@@ -6,7 +6,18 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.5.0  (current)
+v2.6.0  (current)
+------------------------------------------------------------------------
+- Product reviews: the extension now scrapes Amazon and Flipkart reviews.
+  Columns: Rating, Rating (number), Title, Review, Reviewer, Date, Verified,
+  Helpful, Helpful (number), Variant, Product, URL. Reviews rank by helpful
+  votes (then rating), and the analysis becomes review-aware (review count,
+  average rating, % verified, rating breakdown, most-helpful review).
+  Amazon uses stable data-hook selectors (reliable); Flipkart is best-effort
+  (its class names are obfuscated) — report a page if a field is missed.
+
+------------------------------------------------------------------------
+v2.5.0
 ------------------------------------------------------------------------
 - Smart column order: columns that have values come first; columns that are
   blank for this platform/output (e.g. Shares on Instagram/YouTube, or

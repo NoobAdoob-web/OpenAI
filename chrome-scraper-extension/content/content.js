@@ -36,6 +36,13 @@
   ];
   const NUM_RE = /^[\d][\d.,]*\s*[KMB]?$/i;  // "1,234", "12.3K", "4.5M", "893K"
 
+  // Product-review columns (Amazon / Flipkart). Declared here (before bootstrap)
+  // to stay TDZ-safe, same as SOCIAL_COLUMNS.
+  const REVIEW_COLUMNS = [
+    'Rating', 'Rating (number)', 'Title', 'Review', 'Reviewer',
+    'Date', 'Verified', 'Helpful', 'Helpful (number)', 'Variant', 'Product', 'URL'
+  ];
+
   // ─── Bootstrap ───────────────────────────────────────────────────────────
   // Register the message listener FIRST, before anything that could throw.
   // If detection/overlay code throws during bootstrap, the listener must still
@@ -70,6 +77,25 @@
   function buildCandidates() {
     const results = [];
     const usedEls = new Set();
+
+    // ── 0a. Product reviews (Amazon / Flipkart) ──────────────────────────
+    try {
+      const rp = detectReviewPlatform();
+      if (rp) {
+        const rev = extractReviews(rp);
+        if (rev && rev.rows.length > 0) {
+          results.push({
+            element: rev.container || document.body,
+            type: 'reviews',
+            platform: rp,
+            _reviews: rev,
+            score: 2e9,               // reviews win even over social
+            rows: rev.rows.length,
+            cols: rev.headers.length
+          });
+        }
+      }
+    } catch (e) { console.warn('IDS review extract failed', e); }
 
     // ── 0. Social platform extraction (YouTube / Instagram / Facebook / LinkedIn)
     // Highest priority: if we're on a known social platform, extract semantic
@@ -317,7 +343,7 @@
     // Sort best first, skip root elements — but never drop a social candidate
     // (its container can legitimately be <body> when posts are top-level).
     return results
-      .filter(c => c.type === 'social' || (c.element !== document.body && c.element !== document.documentElement))
+      .filter(c => c.type === 'social' || c.type === 'reviews' || (c.element !== document.body && c.element !== document.documentElement))
       .sort((a, b) => b.score - a.score)
       .slice(0, 30);
   }
@@ -368,12 +394,141 @@
         const soc = extractSocialRows(candidate.platform);
         return { headers: soc.headers, rows: soc.rows };
       }
+      if (candidate.type === 'reviews') {
+        const rev = extractReviews(candidate.platform);
+        return { headers: rev.headers, rows: rev.rows };
+      }
       return candidate.type === 'table'
         ? extractTable(candidate.element)
         : extractList(candidate.items || [...candidate.element.children].filter(visible));
     } catch (_) {
       return { headers: [], rows: [] };
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  PRODUCT REVIEWS  (Amazon · Flipkart)
+  // ═══════════════════════════════════════════════════════════════════════
+  function detectReviewPlatform() {
+    const h = location.hostname;
+    if (/(^|\.)amazon\./.test(h)) return 'amazon';
+    if (/(^|\.)flipkart\.com/.test(h)) return 'flipkart';
+    return null;
+  }
+
+  function emptyReviewRow() {
+    const r = {}; REVIEW_COLUMNS.forEach(c => { r[c] = ''; }); return r;
+  }
+
+  function extractReviews(platform) {
+    let rows = [], container = null;
+    try {
+      if (platform === 'amazon') { const o = extractAmazonReviews(); rows = o.rows; container = o.container; }
+      else if (platform === 'flipkart') { const o = extractFlipkartReviews(); rows = o.rows; container = o.container; }
+    } catch (e) { console.warn('IDS review extractor error', e); }
+
+    // Dedupe (reviewer + first 60 chars of review) and drop empty
+    const seen = new Set();
+    rows = rows.filter(r => {
+      if (!(r.Review || r.Title)) return false;
+      const key = (r.Reviewer || '') + '|' + (r.Review || r.Title || '').slice(0, 60);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return { headers: REVIEW_COLUMNS.slice(), rows, container };
+  }
+
+  // ── Amazon (stable data-hook attributes) ────────────────────────────────
+  function extractAmazonReviews() {
+    const items = [...document.querySelectorAll('[data-hook="review"], li[data-hook="review"]')];
+    const product = (document.querySelector('[data-hook="product-link"], #productTitle, a.product-title, [data-hook="cr-product-title"]')?.textContent
+      || document.title.replace(/\s*[:|-].*$/, '')).trim();
+
+    const rows = items.map(it => {
+      const row = emptyReviewRow();
+      const ratingTxt = (it.querySelector('[data-hook="review-star-rating"] .a-icon-alt, [data-hook="cmps-review-star-rating"] .a-icon-alt')?.textContent
+        || it.querySelector('i[class*="a-star"] .a-icon-alt')?.textContent || '').trim();
+      row.Rating = ratingTxt;                                    // "4.0 out of 5 stars"
+      const rm = ratingTxt.match(/([\d.]+)\s*out of\s*5/i); if (rm) row['Rating (number)'] = rm[1];
+
+      const titleEl = it.querySelector('[data-hook="review-title"]');
+      if (titleEl) {
+        const spans = [...titleEl.querySelectorAll('span')].map(s => s.textContent.trim()).filter(t => t && !/out of 5/i.test(t) && !/^\d+(\.\d)?$/.test(t));
+        row.Title = (spans.pop() || titleEl.textContent.trim()).replace(/\s+/g, ' ');
+      }
+      row.Review = ((it.querySelector('[data-hook="review-body"]') || {}).innerText || '').trim().replace(/\s+/g, ' ');
+      row.Reviewer = (it.querySelector('.a-profile-name')?.textContent || '').trim();
+      const dateTxt = (it.querySelector('[data-hook="review-date"]')?.textContent || '').trim();
+      const dm = dateTxt.match(/on\s+(.+)$/i); row.Date = dm ? dm[1].trim() : dateTxt;
+      row.Verified = it.querySelector('[data-hook="avp-badge"]') ? 'Yes' : '';
+      const helpful = (it.querySelector('[data-hook="helpful-vote-statement"]')?.textContent || '').trim();
+      row.Helpful = helpful;
+      const hm = helpful.replace(/,/g, '').match(/(\d+)/); if (hm) row['Helpful (number)'] = hm[1]; else if (/one|a person/i.test(helpful)) row['Helpful (number)'] = '1';
+      row.Variant = (it.querySelector('[data-hook="format-strip"], .review-format-strip')?.textContent || '').trim().replace(/\s+/g, ' ');
+      row.Product = product;
+      const link = it.querySelector('[data-hook="review-title"]');
+      row.URL = link && link.getAttribute('href') ? makeAbsolute(link.getAttribute('href')) : location.href.split('?')[0];
+      return row;
+    });
+
+    const container = items[0]?.closest('#cm_cr-review_list, .reviews-content, [data-hook="reviews-medley-footer"]') || items[0]?.parentElement || null;
+    return { rows, container };
+  }
+
+  // ── Flipkart (obfuscated classes → structural heuristic; best-effort) ────
+  function extractFlipkartReviews() {
+    const product = (document.querySelector('h1 span, ._35KyD6, .B_NuCI')?.textContent || document.title.replace(/\s*[|-].*$/, '')).trim();
+
+    // A review card contains a rating badge (a lone 1–5, often with a star) and
+    // a longer text block. Find rating badges, then walk up to the card.
+    const badges = [...document.querySelectorAll('div, span')].filter(e => {
+      const t = e.textContent.trim();
+      if (!/^[1-5](\.\d)?$/.test(t)) return false;
+      // must look like a rating chip: small, has a star icon nearby or star-ish class
+      const cls = e.className || '';
+      return /star|rating|XQDdHH|_3LWZlK|_1lRcqv/i.test(cls) || e.querySelector('svg, img') || /star|rating/i.test((e.parentElement?.className) || '');
+    });
+
+    const cards = [];
+    const seenCard = new Set();
+    badges.forEach(b => {
+      let el = b;
+      for (let i = 0; i < 6 && el; i++, el = el.parentElement) {
+        const txt = (el.innerText || '').trim();
+        if (txt.length > 40 && el.querySelectorAll('div,span,p').length >= 3) {
+          if (!seenCard.has(el)) { seenCard.add(el); cards.push({ card: el, rating: b.textContent.trim() }); }
+          break;
+        }
+      }
+    });
+
+    const rows = cards.map(({ card, rating }) => {
+      const row = emptyReviewRow();
+      row.Rating = rating + ' out of 5';
+      row['Rating (number)'] = rating;
+      // Title = a short bold-ish line; Review = the longest text block
+      const texts = [...card.querySelectorAll('div, p, span')]
+        .map(e => (e.children.length === 0 ? (e.innerText || '').trim() : ''))
+        .filter(t => t.length > 0);
+      const longest = texts.filter(t => t.length > 20).sort((a, b) => b.length - a.length)[0] || '';
+      row.Review = longest.replace(/\s+/g, ' ').slice(0, 4000);
+      const shortLines = texts.filter(t => t.length > 3 && t.length <= 60 && t !== longest && !/^[1-5](\.\d)?$/.test(t));
+      row.Title = (shortLines[0] || '').replace(/\s+/g, ' ');
+      // Reviewer / Date: Flipkart shows "Certified Buyer", a name, and a month/year
+      const nameEl = card.querySelector('p[class*="_2sc7ZR"], ._2NsDsF, .álgn');
+      row.Reviewer = (nameEl?.textContent || '').trim();
+      const dm = (card.innerText || '').match(/([A-Z][a-z]{2,},?\s*\d{4}|\d{1,2}\s+[A-Z][a-z]{2,},?\s*\d{4})/);
+      row.Date = dm ? dm[1] : '';
+      row.Verified = /Certified Buyer/i.test(card.innerText || '') ? 'Yes' : '';
+      const up = (card.innerText || '').match(/(\d[\d,]*)\s*\n?\s*(?:people|)\s*(?:found|)/i);
+      row.Product = product;
+      row.URL = location.href.split('?')[0];
+      return row;
+    });
+
+    const container = cards[0]?.card?.parentElement || null;
+    return { rows, container };
   }
 
   // ═══════════════════════════════════════════════════════════════════════
