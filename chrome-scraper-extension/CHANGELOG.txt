@@ -6,7 +6,16 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.4.1  (current)
+v2.5.0  (current)
+------------------------------------------------------------------------
+- Smart column order: columns that have values come first; columns that are
+  blank for this platform/output (e.g. Shares on Instagram/YouTube, or
+  Likes/Comments on a basic reels scrape) are pushed to the end. Applies to
+  the popup preview, CSV, and both Excel tabs. Paired columns (Views /
+  Views (number)) stay together; Rank stays first.
+
+------------------------------------------------------------------------
+v2.4.1
 ------------------------------------------------------------------------
 - Fix: "Cannot access '_scriptBlobCache' before initialization" on some
   pages (e.g. Instagram). The grid-date cache variable was declared after

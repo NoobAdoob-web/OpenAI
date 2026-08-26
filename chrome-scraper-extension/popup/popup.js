@@ -109,6 +109,19 @@ function currentHeaders() {
   return exportHeaders.length ? exportHeaders : currentData.headers;
 }
 
+// Move columns that have at least one value to the front, and fully-blank
+// columns (not available for this platform/output, e.g. Shares on Instagram)
+// to the end — keeping each group's original order.
+function orderByPopulated(headers, rows) {
+  const isBlank = h => rows.every(r => {
+    const v = r[h];
+    return v === undefined || v === null || String(v).trim() === '';
+  });
+  const filled = [], empty = [];
+  headers.forEach(h => (isBlank(h) ? empty : filled).push(h));
+  return [...filled, ...empty];
+}
+
 // ── Analysis (works on basic-scrape data: views + dates) ──────────────────
 // Parse the many date formats we collect into a real Date (or null):
 //   ISO "2024-03-15", "2024-03-15T..", "January 1, 2024", relative "2 days ago",
@@ -410,7 +423,7 @@ function applyMeta(url, meta) {
 // Render the preview as the ranked (Top Performers) view.
 function refreshPreview() {
   if (!exportRows.length) return;
-  renderPreview(buildRanked(currentHeaders(), exportRows));
+  renderPreview(buildRanked(orderByPopulated(currentHeaders(), exportRows), exportRows));
   renderAnalysis();
 }
 
@@ -788,7 +801,7 @@ function updateExportButtons() {
 // ── CSV download (ranked "Top Performers" view) ───────────────────────────
 function downloadCSV() {
   if (!exportRows.length) return;
-  const { headers, rows } = buildRanked(currentHeaders(), exportRows);
+  const { headers, rows } = buildRanked(orderByPopulated(currentHeaders(), exportRows), exportRows);
 
   const esc = v => {
     const s = String(v ?? '');
@@ -853,7 +866,7 @@ function downloadXLSX() {
     return s;
   }
 
-  const rawHeaders = currentHeaders();
+  const rawHeaders = orderByPopulated(currentHeaders(), exportRows);
   const ranked = buildRanked(rawHeaders, exportRows);
 
   // Analysis block for the Top Performers tab
