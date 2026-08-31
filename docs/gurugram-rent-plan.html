@@ -1,0 +1,545 @@
+<title>Gurugram.rent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+  :root{
+    --ground:#E8E9E4;
+    --surface:#F7F7F4;
+    --surface-2:#DEE0D9;
+    --ink:#1A222B;
+    --ink-2:#4E5A66;
+    --ink-3:#7C8794;
+    --line:#C6CAC1;
+    --line-2:#D8DBD3;
+    --brass:#96690F;
+    --brass-soft:#EFE2C4;
+    --brick:#9A3826;
+    --brick-soft:#F2DED9;
+    --slate:#2F5670;
+    --slate-soft:#DBE4EB;
+
+    --f-display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif;
+    --f-body:"Source Serif 4",Georgia,"Times New Roman",serif;
+    --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#13171B;
+      --surface:#1B2026;
+      --surface-2:#252B33;
+      --ink:#E6E6E0;
+      --ink-2:#A9B2BB;
+      --ink-3:#78838E;
+      --line:#333B44;
+      --line-2:#2A313A;
+      --brass:#D9A63F;
+      --brass-soft:#3A2F14;
+      --brick:#D97359;
+      --brick-soft:#3B211A;
+      --slate:#7EAFD1;
+      --slate-soft:#1D2A34;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#13171B;
+    --surface:#1B2026;
+    --surface-2:#252B33;
+    --ink:#E6E6E0;
+    --ink-2:#A9B2BB;
+    --ink-3:#78838E;
+    --line:#333B44;
+    --line-2:#2A313A;
+    --brass:#D9A63F;
+    --brass-soft:#3A2F14;
+    --brick:#D97359;
+    --brick-soft:#3B211A;
+    --slate:#7EAFD1;
+    --slate-soft:#1D2A34;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground);
+    background-image:
+      repeating-linear-gradient(to right, var(--line-2) 0 1px, transparent 1px 56px),
+      repeating-linear-gradient(to bottom, var(--line-2) 0 1px, transparent 1px 56px);
+    color:var(--ink);
+    font-family:var(--f-body);
+    font-size:17px;
+    line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .shell{max-width:1200px;margin:0 auto;padding:0 24px 96px}
+
+  /* ---------- masthead ---------- */
+  header.mast{
+    border-bottom:2px solid var(--ink);
+    padding:56px 0 24px;
+    margin-bottom:8px;
+  }
+  .eyebrow{
+    font-family:var(--f-mono);font-size:11.5px;font-weight:500;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--brass);
+    display:flex;gap:14px;flex-wrap:wrap;align-items:center;
+  }
+  .eyebrow span:not(:first-child)::before{content:"／";color:var(--ink-3);margin-right:14px}
+  h1{
+    font-family:var(--f-display);
+    font-size:clamp(44px,8vw,86px);
+    line-height:.95;font-weight:800;letter-spacing:-.03em;
+    margin:18px 0 0;text-wrap:balance;
+  }
+  h1 .dot{color:var(--brass)}
+  .deck{
+    font-size:clamp(19px,2.4vw,23px);line-height:1.45;color:var(--ink-2);
+    max-width:34ch;margin:20px 0 0;
+  }
+  .mast-grid{display:grid;gap:32px}
+  @media(min-width:860px){
+    .mast-grid{grid-template-columns:1.15fr .85fr;align-items:end}
+  }
+  .thesis{
+    border-left:3px solid var(--brass);padding-left:18px;
+    font-size:16px;color:var(--ink-2);max-width:46ch;
+  }
+  .thesis strong{color:var(--ink);font-weight:600}
+
+  /* ---------- layout ---------- */
+  .cols{display:grid;gap:44px;margin-top:48px}
+  @media(min-width:1000px){
+    .cols{grid-template-columns:186px minmax(0,1fr);gap:56px;align-items:start}
+    nav.toc{position:sticky;top:28px}
+  }
+  nav.toc{font-family:var(--f-mono);font-size:12px;line-height:1.5}
+  nav.toc ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+  nav.toc a{
+    display:block;padding:6px 0 6px 12px;border-left:2px solid var(--line);
+    color:var(--ink-3);text-decoration:none;transition:color .15s,border-color .15s;
+  }
+  nav.toc a:hover,nav.toc a:focus-visible{color:var(--ink);border-left-color:var(--brass)}
+  nav.toc a[aria-current="true"]{color:var(--ink);border-left-color:var(--brass);font-weight:600}
+  @media(max-width:999px){nav.toc{display:none}}
+
+  main{display:flex;flex-direction:column;gap:64px;min-width:0}
+  section{display:flex;flex-direction:column;gap:18px;scroll-margin-top:24px}
+  .sec-label{
+    font-family:var(--f-mono);font-size:11.5px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--ink-3);
+    border-top:1px solid var(--line);padding-top:10px;
+  }
+  h2{
+    font-family:var(--f-display);font-weight:700;letter-spacing:-.02em;
+    font-size:clamp(28px,4vw,38px);line-height:1.08;margin:0;text-wrap:balance;
+  }
+  h3{
+    font-family:var(--f-display);font-weight:700;letter-spacing:-.01em;
+    font-size:19px;line-height:1.25;margin:0;text-wrap:balance;
+  }
+  p{margin:0;max-width:66ch}
+  main ul{margin:0;padding-left:1.15em;max-width:66ch;display:flex;flex-direction:column;gap:9px}
+  main li::marker{color:var(--brass)}
+  a{color:var(--ink);text-decoration-color:var(--brass);text-underline-offset:3px}
+  strong{font-weight:600}
+  code{
+    font-family:var(--f-mono);font-size:.87em;background:var(--surface-2);
+    padding:1px 5px;border-radius:3px;color:var(--ink);
+  }
+
+  /* ---------- plates ---------- */
+  .plate{
+    background:var(--surface);border:1px solid var(--line);
+    padding:24px;display:flex;flex-direction:column;gap:16px;
+  }
+  .plate-head{
+    font-family:var(--f-mono);font-size:11.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-3);
+  }
+  .cards{display:grid;gap:14px}
+  @media(min-width:700px){.cards.two{grid-template-columns:1fr 1fr}}
+  @media(min-width:820px){.cards.three{grid-template-columns:repeat(3,1fr)}}
+  .card{
+    background:var(--surface);border:1px solid var(--line);
+    padding:18px 20px;display:flex;flex-direction:column;gap:8px;
+  }
+  .card p{font-size:15.5px;color:var(--ink-2);max-width:none}
+  .card .tag{
+    font-family:var(--f-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--brass);
+  }
+
+  /* ---------- tables ---------- */
+  .scroller{overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:560px;font-size:15px}
+  th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--line-2);vertical-align:top}
+  thead th{
+    font-family:var(--f-mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--ink-3);background:var(--surface-2);border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  tbody tr:last-child td{border-bottom:0}
+  td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  td.key{font-family:var(--f-mono);font-size:13px;white-space:nowrap;color:var(--ink)}
+  .pill{
+    display:inline-block;font-family:var(--f-mono);font-size:10.5px;letter-spacing:.08em;
+    text-transform:uppercase;padding:2px 7px;border-radius:2px;white-space:nowrap;
+  }
+  .pill.pick{background:var(--brass-soft);color:var(--brass)}
+  .pill.alt{background:var(--slate-soft);color:var(--slate)}
+  .pill.no{background:var(--brick-soft);color:var(--brick)}
+
+  /* ---------- code ---------- */
+  pre{
+    margin:0;overflow-x:auto;background:var(--surface-2);border:1px solid var(--line);
+    padding:18px 20px;font-family:var(--f-mono);font-size:12.5px;line-height:1.7;color:var(--ink);
+  }
+  pre .c{color:var(--ink-3)}
+  pre .k{color:var(--brass);font-weight:500}
+
+  /* ---------- phases ---------- */
+  .phase{
+    display:grid;gap:6px 20px;padding:20px 0;border-top:1px solid var(--line);
+  }
+  @media(min-width:760px){.phase{grid-template-columns:132px minmax(0,1fr)}}
+  .phase-id{
+    font-family:var(--f-mono);font-size:11.5px;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--brass);padding-top:4px;
+  }
+  .phase-id em{display:block;font-style:normal;color:var(--ink-3);letter-spacing:.08em;margin-top:3px}
+  .phase-body{display:flex;flex-direction:column;gap:10px}
+
+  /* ---------- callouts ---------- */
+  .flag{
+    border-left:3px solid var(--brick);background:var(--brick-soft);
+    padding:16px 20px;display:flex;flex-direction:column;gap:8px;
+  }
+  .flag .plate-head{color:var(--brick)}
+  .flag p{max-width:62ch}
+
+  .verdict{
+    border:1px solid var(--ink);background:var(--surface);
+    padding:26px 26px 28px;display:flex;flex-direction:column;gap:14px;
+  }
+  .verdict h3{font-size:22px}
+
+  footer{
+    margin-top:72px;padding-top:20px;border-top:2px solid var(--ink);
+    font-family:var(--f-mono);font-size:11.5px;letter-spacing:.08em;
+    color:var(--ink-3);display:flex;flex-wrap:wrap;gap:8px 20px;justify-content:space-between;
+  }
+  :focus-visible{outline:2px solid var(--brass);outline-offset:3px}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="shell">
+
+<header class="mast">
+  <div class="mast-grid">
+    <div>
+      <div class="eyebrow"><span>Build plan</span><span>Gurugram / NCR</span><span>Aug 2026</span></div>
+      <h1>Gurugram<span class="dot">.rent</span></h1>
+      <p class="deck">A crowdsourced map of what people actually pay — not what brokers ask.</p>
+    </div>
+    <p class="thesis">The map is a weekend. The product is <strong>500 honest rent pins before you tell anyone the site exists</strong>. Everything in this plan is arranged around that one problem.</p>
+  </div>
+</header>
+
+<div class="cols">
+  <nav class="toc" aria-label="Contents">
+    <ol>
+      <li><a href="#what">What it actually is</a></li>
+      <li><a href="#gurugram">Why Gurugram ≠ Bengaluru</a></li>
+      <li><a href="#schema">The data model</a></li>
+      <li><a href="#stack">Stack &amp; the map call</a></li>
+      <li><a href="#seed">Cold start</a></li>
+      <li><a href="#build">Build sequence</a></li>
+      <li><a href="#quality">Brokers &amp; bad data</a></li>
+      <li><a href="#legal">Privacy &amp; law</a></li>
+      <li><a href="#cost">What it costs</a></li>
+      <li><a href="#risk">Where this fails</a></li>
+      <li><a href="#next">Start here</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+  <section id="what">
+    <div class="sec-label">01 — Framing</div>
+    <h2>You are not building a map. You are building a dataset with a map on it.</h2>
+    <p>bengaluru.rent works because of information asymmetry: a broker quotes ₹38k for a flat whose sitting tenant pays ₹26k, and nobody can check. The map is just the cheapest way to make thousands of small private truths legible at once. Harshit Anand built it solo in April 2026 and word-of-mouth carried it to ~7,400 pins.</p>
+    <p>The builder's own framing confirms this. He posted it on LinkedIn as <em>"vibe-coded www.bengaluru.rent"</em> — the code was the cheap part, written with AI assistance in evenings. At that post the map held ₹150 Cr of pinned rent; it now holds ₹333 Cr. The engineering didn't more than double in that window. <strong>The dataset did.</strong></p>
+    <p>So the engineering is the easy half. A MapLibre canvas with clustered pins and a submit sheet is two focused weekends. The half that kills clones is <strong>the first thousand data points</strong> — because a rent map with 40 pins doesn't look sparse, it looks broken, and nobody shares a broken site.</p>
+    <div class="cards three">
+      <div class="card"><span class="tag">The asset</span><h3>Paid rents</h3><p>Self-reported by tenants, anonymous, dated, tied to a specific society. Nobody else has this.</p></div>
+      <div class="card"><span class="tag">The hook</span><h3>Zero brokerage</h3><p>Owner-direct listings. Gurugram's broker norm is one month's rent + GST — that's a ₹60k–1L saving on a decent flat.</p></div>
+      <div class="card"><span class="tag">The moat</span><h3>Time</h3><p>Every month of pins compounds — ₹150 Cr to ₹333 Cr pinned in a matter of months. A competitor starting a year later starts at zero again.</p></div>
+    </div>
+  </section>
+
+  <section id="gurugram">
+    <div class="sec-label">02 — Local physics</div>
+    <h2>Copying Bengaluru's product one-for-one would build the wrong thing</h2>
+    <p>Bengaluru rents are discussed by neighbourhood — "Indiranagar 2BHK". Gurugram rents are discussed by <strong>building</strong> — "Ireo Victory Valley 3BHK", "Vatika City", "DLF Phase 3 builder floor". The city is condo-dominated and vertically stacked, which changes almost every design decision downstream.</p>
+
+    <div class="cards two">
+      <div class="card">
+        <span class="tag">Primary key</span>
+        <h3>Society, not neighbourhood</h3>
+        <p>Pin to a canonical society from a typeahead list, then let the sector polygon be derived. A society with 900 units and 30 pins gives a real median; a 200 m radius of scattered points does not.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Free geography</span>
+        <h3>The sector grid is your basemap</h3>
+        <p>Sectors 1–115, the DLF phases, Sushant Lok, South City, Palam Vihar, old-Gurgaon colonies. Clean, well-known, mutually exclusive polygons — an aggregation layer handed to you for nothing.</p>
+      </div>
+      <div class="card">
+        <span class="tag">The lie in "rent"</span>
+        <h3>All-in monthly, or it's useless</h3>
+        <p>CAM/maintenance runs roughly ₹3–8 per sq ft per month and is often quoted separately. Power backup is billed per unit on top. A ₹45k "rent" can be ₹58k out the door. Capture the components; display the total.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Stock types</span>
+        <h3>Three different products</h3>
+        <p>Society tower, builder floor, independent house/kothi — plus PG/co-living. They price differently for the same BHK on the same road. One field, four values, never mixed in a median.</p>
+      </div>
+      <div class="card">
+        <span class="tag">The real filter</span>
+        <h3>Commute, not distance</h3>
+        <p>Nobody searches "within 5 km". They search "under 30 min to Cyber City / Udyog Vihar / Golf Course Road". Drive-time bands beat radius search here more than in any other Indian city.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Also priced in</span>
+        <h3>The NCR checklist</h3>
+        <p>Deposit months (2–3 here, not Bengaluru's 6–10), water source, power-backup hours, non-veg and pet policy, bachelor-allowed, society tenant rules. These decide a shortlist and cost nothing to collect.</p>
+      </div>
+    </div>
+
+    <div class="flag">
+      <div class="plate-head">Name the site correctly</div>
+      <p>Residents overwhelmingly say <strong>Gurgaon</strong>; the state renamed it Gurugram in 2016. Register both <code>gurgaon.rent</code> and <code>gurugram.rent</code> and redirect one to the other. Search volume and word-of-mouth favour "Gurgaon" — I'd make that the primary and keep Gurugram as the formal alias.</p>
+    </div>
+  </section>
+
+  <section id="schema">
+    <div class="sec-label">03 — Data model</div>
+    <h2>Get these six fields right and the rest is decoration</h2>
+    <p>Two fields do disproportionate work. <code>source</code> separates what a tenant pays from what a broker asks — that distinction <em>is</em> the product, so it must be structural, not a note. <code>lease_start_month</code> makes a rent meaningful: after the 20–35% surge across the Cyber City and Golf Course Extension corridors, a 2023 rent and a 2026 rent are different facts.</p>
+    <div class="scroller">
+<pre><span class="c">-- Postgres + PostGIS. One table does the whole MVP.</span>
+
+<span class="k">create table</span> pins (
+  id              uuid primary key default gen_random_uuid(),
+  created_at      timestamptz default now(),
+
+  <span class="c">-- geography: store the SNAPPED point only, never the raw one</span>
+  geom            geometry(Point, 4326),   <span class="c">-- rounded to ~100 m</span>
+  society_id      uuid references societies(id),
+  sector_code     text,                    <span class="c">-- 'SEC-57', 'DLF-3', 'SUSHANT-LOK-1'</span>
+
+  <span class="c">-- the unit</span>
+  bhk             text,   <span class="c">-- 1RK | 1 | 2 | 3 | 4 | 5+</span>
+  stock_type      text,   <span class="c">-- society_tower | builder_floor | independent | pg</span>
+  carpet_sqft     int,
+  floor_no        int,
+  furnishing      text,   <span class="c">-- bare | semi | full</span>
+
+  <span class="c">-- the money, decomposed</span>
+  rent_inr           int not null,
+  maintenance_inr    int,     <span class="c">-- monthly CAM, 0 if included</span>
+  maintenance_basis  text,    <span class="c">-- included | fixed | per_sqft</span>
+  power_backup_note  text,
+  deposit_months     numeric,
+
+  <span class="c">-- ⚑ the two fields that make this trustworthy</span>
+  <span class="k">source</span>             text not null,  <span class="c">-- tenant_paid | owner_ask | broker_ask | tolet_board</span>
+  <span class="k">lease_start_month</span>  date not null,  <span class="c">-- when this rent was actually agreed</span>
+
+  <span class="c">-- moderation</span>
+  status          text default 'pending',  <span class="c">-- pending | live | rejected</span>
+  submitter_hash  text,                    <span class="c">-- salted hash of IP; never the IP</span>
+  flags           jsonb
+);
+</pre>
+    </div>
+    <p><strong>Build a <code>societies</code> table before anything else.</strong> Seed it from OpenStreetMap — named <code>landuse=residential</code> and <code>building=apartments</code> polygons in Gurugram cover most large condos, and OSM's ODbL licence permits this with attribution. Hand-clean the top 300 by name and add sector, developer, and approximate unit count. This single table is what turns scattered pins into "Ireo Uptown: 2BHK median ₹52k, n=14, freshest Jun 2026".</p>
+  </section>
+
+  <section id="stack">
+    <div class="sec-label">04 — Stack</div>
+    <h2>One non-obvious call: don't use Google Maps</h2>
+    <p>bengaluru.rent renders on Google Maps, and at 172k visitors that is a live billing risk — Google's Dynamic Maps free allowance is on the order of 10k map loads a month, and it's roughly $7 per 1,000 loads after that (check current SKU pricing before you commit). MapLibre GL JS with Protomaps tiles you host yourself on Cloudflare R2 is visually equivalent, costs effectively nothing, and can't surprise you with a four-figure invoice in month three.</p>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Layer</th><th>Pick</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td class="key">Framework</td><td>Next.js 15 (App Router) <span class="pill pick">pick</span></td><td>Server-render society and sector pages so Google indexes "2BHK rent Sector 57 Gurgaon" — that long tail is most of your organic traffic.</td></tr>
+          <tr><td class="key">Map</td><td>MapLibre GL JS 5 <span class="pill pick">pick</span></td><td>Free, vector, no per-load billing. Google Maps <span class="pill no">avoid</span> unless you want the Places autocomplete badly enough to pay for it.</td></tr>
+          <tr><td class="key">Tiles</td><td>Protomaps <code>.pmtiles</code> on R2</td><td>One file, zero egress fees on R2. MapTiler's free tier <span class="pill alt">alt</span> is fine to start and swappable later.</td></tr>
+          <tr><td class="key">Clustering</td><td>supercluster, client-side</td><td>Handles 50k points comfortably. Only move to server-side H3 aggregation if you cross that.</td></tr>
+          <tr><td class="key">Database</td><td>Supabase (Postgres + PostGIS)</td><td>Free tier covers year one. RLS: anon can <code>insert</code> into <code>pins</code>, and can only <code>select</code> from a <code>pins_public</code> view that hides <code>submitter_hash</code>.</td></tr>
+          <tr><td class="key">Anti-spam</td><td>Cloudflare Turnstile</td><td>Invisible, free, no signup wall. Pair with a per-hash rate limit.</td></tr>
+          <tr><td class="key">Moderation</td><td>A single <code>/admin</code> queue</td><td>Auto-flag anything &gt;2.5σ from that society+BHK median. Approve in bulk; you'll spend ~10 min/day.</td></tr>
+          <tr><td class="key">Hosting</td><td>Vercel or Cloudflare Pages</td><td>Note Vercel's Hobby tier bars commercial use — once ads run, you're on Pro ($20/mo). Cloudflare Pages has no such clause.</td></tr>
+          <tr><td class="key">Analytics</td><td>Plausible or self-hosted Umami</td><td>You'll be making privacy claims on the About page. Don't undercut them with GA.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="seed">
+    <div class="sec-label">05 — Cold start</div>
+    <h2>Seed 500 pins privately, then launch once</h2>
+    <p>You get one good launch post. Spend it on a map that already looks alive. Target roughly <strong>30–40 pins in each of ~15 micro-markets</strong> before the site is public — Gurugram's condo density means fewer pins go further than in Bengaluru, because 30 pins in one society is a genuinely useful median.</p>
+    <div class="plate">
+      <div class="plate-head">The fifteen micro-markets to cover</div>
+      <p>DLF Phases 1–5 · Sushant Lok 1–3 · South City 1–2 · Golf Course Road (42/43/53/54) · Golf Course Ext Rd (58–68) · Sohna Road (47–49) · Sector 56/57 · Nirvana Country &amp; Sector 50 · New Gurgaon (80–95) · Dwarka Expressway (99–113) · Palam Vihar · Old Gurgaon (4–7, 14, 15) · Sectors 21–23 near Udyog Vihar · MG Road / Sikanderpur · Sectors 70–76</p>
+    </div>
+    <div class="cards two">
+      <div class="card"><span class="tag">Highest yield</span><h3>Society WhatsApp groups</h3><p>Gurugram's RWA and tower groups are unusually active and unusually large. One admin who likes the idea is worth 50 pins. Go society by society.</p></div>
+      <div class="card"><span class="tag">Highest yield</span><h3>LinkedIn, not just Reddit</h3><p>Gurugram's renter base is corporate — consulting, tech, BFSI in Cyber City and Udyog Vihar. A LinkedIn post reaches this city's tenants better than it would in Bengaluru. Then r/gurgaon, r/delhi, and Blind.</p></div>
+      <div class="card"><span class="tag">Weekend work</span><h3>Walk the To-Let boards</h3><p>Photograph boards in DLF Phase 3, Sector 45, Sushant Lok, Palam Vihar. Ship this as a user feature too — "Spot a To-Let" — but seed it yourself first.</p></div>
+      <div class="card"><span class="tag">Owner-direct</span><h3>Facebook &amp; OLX owner posts</h3><p>"Gurgaon Flats &amp; Flatmates — No Brokerage" style groups and OLX owner listings. Tag every one of these <code>owner_ask</code>, never <code>tenant_paid</code>.</p></div>
+    </div>
+    <div class="flag">
+      <div class="plate-head">Do not scrape the portals</div>
+      <p>NoBroker, MagicBricks, Housing and 99acres all prohibit scraping in their terms, and their data is asking prices — the exact number your product exists to contradict. Seeding with scraped asks would make your medians wrong <em>and</em> hand a competitor a cease-and-desist. Public listings are fine as leads to verify by hand; they are not a database to copy.</p>
+    </div>
+  </section>
+
+  <section id="build">
+    <div class="sec-label">06 — Sequence</div>
+    <h2>Four to six weeks, part time</h2>
+    <div>
+      <div class="phase">
+        <div class="phase-id">Phase 0<em>Weekend 1</em></div>
+        <div class="phase-body">
+          <h3>Societies table + domains</h3>
+          <p>Pull Gurugram residential polygons from OSM, clean the top 300 by hand, attach sector codes. Register both domains. This is unglamorous and it unblocks everything else.</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-id">Phase 1<em>Weekends 2–3</em></div>
+        <div class="phase-body">
+          <h3>Map + submit flow</h3>
+          <p>MapLibre canvas, sector-level counts at low zoom, society pins at high zoom, a bottom sheet with median by BHK. Submit must be under 60 seconds: society typeahead, BHK, rent, maintenance, furnishing, month. No account, ever.</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-id">Phase 2<em>Weeks 3–4</em></div>
+        <div class="phase-body">
+          <h3>Seed to 500, in private</h3>
+          <p>Site is live but unannounced. Work the WhatsApp groups and walk the boards. Watch which micro-markets stay empty and go get those specifically — a hole in DLF Phase 4 is more damaging than 50 extra pins in Sector 57.</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-id">Phase 3<em>Week 5</em></div>
+        <div class="phase-body">
+          <h3>Launch</h3>
+          <p>One coordinated day: r/gurgaon, LinkedIn, Blind, the society groups that helped seed it. Lead with a finding, not a feature — "here's what 500 Gurgaon tenants actually pay, by society" travels; "I built a map" doesn't.</p>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-id">Phase 4<em>Post-launch</em></div>
+        <div class="phase-body">
+          <h3>Owner listings, then everything else</h3>
+          <p>Zero-brokerage owner listings are the revenue-adjacent hook and the reason people return. Flatmates, drive-time bands, green cover, and metro layers come after — each is a week, none is urgent.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="quality">
+    <div class="sec-label">07 — Integrity</div>
+    <h2>Brokers will try to poison it. Plan for that on day one.</h2>
+    <p>Anonymous submission is what makes people honest, and it's also the attack surface. In Gurugram the motivated attacker isn't a troll — it's an agent with a stake in a society's headline rent staying high. Four defences, all cheap:</p>
+    <ul>
+      <li><strong>Statistical flagging.</strong> Anything beyond ~2.5σ of the existing society+BHK distribution goes to the queue instead of the map. New societies with fewer than three pins are always queued.</li>
+      <li><strong>Rate limits per salted IP hash</strong> plus Turnstile. A single actor filing 20 pins into one society in an hour is the signal you're looking for.</li>
+      <li><strong>Show <code>n</code> and freshness everywhere.</strong> "₹52k median · 14 reports · latest Jun 2026" is honest and makes thin data self-evidently thin. Medians, never means — one fake ₹5L pin can't move a median.</li>
+      <li><strong>Let readers report a pin.</strong> Two reports on a pin with n≥5 pulls it for review. Cheap crowd immune system.</li>
+    </ul>
+  </section>
+
+  <section id="legal">
+    <div class="sec-label">08 — Privacy &amp; law</div>
+    <h2>Anonymous by construction, not by promise</h2>
+    <ul>
+      <li><strong>Snap coordinates before storage.</strong> Three decimal places is about 110 m. Round on the server on insert and discard the original — if you never hold the precise point, you can't leak it.</li>
+      <li><strong>Suppress small-n societies.</strong> In a 12-unit builder floor, one pin plus a floor number identifies a specific tenant's rent to their landlord. Don't surface society-level figures below three pins; show the sector instead.</li>
+      <li><strong>Never store tower or flat numbers.</strong> Not in a free-text note either — strip digits from notes matching unit patterns.</li>
+      <li><strong>DPDP Act 2023.</strong> Anonymous tenant pins with no contact details sit largely outside its scope. Owner listings carrying a phone number do not: you need a clear consent notice at collection, a stated purpose, a working deletion route, and a named grievance contact on the site.</li>
+      <li><strong>Ads and data.</strong> If you run ads to cover servers, say so plainly on the About page — and then never sell the pin data, because that promise is the entire reason people submit.</li>
+    </ul>
+  </section>
+
+  <section id="cost">
+    <div class="sec-label">09 — Money</div>
+    <h2>Under ₹1,000 a month until it's genuinely popular</h2>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Item</th><th>Year 1</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="key">.rent domains ×2</td><td class="num">≈ ₹6,000/yr</td><td>Premium TLD; expect ₹2,500–4,000 each per year.</td></tr>
+          <tr><td class="key">Cloudflare (R2, Turnstile, DNS)</td><td class="num">₹0</td><td>Tile hosting fits inside the free allowances at this scale.</td></tr>
+          <tr><td class="key">Supabase</td><td class="num">₹0</td><td>Free tier to roughly 500 MB; Pro is $25/mo when you outgrow it.</td></tr>
+          <tr><td class="key">Hosting</td><td class="num">₹0 – ₹1,800/mo</td><td>Free until ads run; Vercel Pro is $20/mo, Cloudflare Pages stays free.</td></tr>
+          <tr><td class="key">Map tiles</td><td class="num">₹0</td><td>Self-hosted Protomaps. This line is ₹0 only because you skipped Google Maps.</td></tr>
+          <tr><td class="key">Analytics</td><td class="num">₹0 – ₹800/mo</td><td>Self-host Umami for free, or pay for Plausible.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Realistically: <strong>₹6,000 up front and ₹0–2,500 a month.</strong> The scarce resource is your evenings, not your rupees.</p>
+  </section>
+
+  <section id="risk">
+    <div class="sec-label">10 — Honest risks</div>
+    <h2>Where this most likely dies</h2>
+    <div class="cards two">
+      <div class="card"><span class="tag">Most likely</span><h3>Cold start</h3><p>You launch at 120 pins because seeding was boring, the map looks empty, nobody shares it, and it never compounds. This is the failure mode. Guard against it by refusing to launch under 500.</p></div>
+      <div class="card"><span class="tag">Likely</span><h3>Second-city brand transfer</h3><p>bengaluru.rent's trust doesn't come with you. Gurugram doesn't know you, and NCR is more broker-saturated and more sceptical. Budget more effort for credibility than the Bengaluru timeline suggests.</p></div>
+      <div class="card"><span class="tag">Possible</span><h3>Poisoned medians</h3><p>If agents successfully inflate a few large societies and someone notices publicly, the trust is gone and doesn't come back. Ship the flagging in v1, not v2.</p></div>
+      <div class="card"><span class="tag">Watch</span><h3>Incumbent response</h3><p>NoBroker and Housing operate heavily in NCR. They won't copy the crowdsourced-rent angle quickly, but they can outspend you on SEO for every generic query. Own society and sector long-tail pages instead.</p></div>
+    </div>
+  </section>
+
+  <section id="next">
+    <div class="sec-label">11 — Start here</div>
+    <div class="verdict">
+      <h3>The next three things, in order</h3>
+      <ul>
+        <li><strong>Register the domains today</strong> — <code>gurgaon.rent</code> and <code>gurugram.rent</code>. Cheapest irreversible step; do it before you write code.</li>
+        <li><strong>Build the societies table</strong> from OSM and hand-clean the top 300. Nothing else works properly without it, and it's the one asset a competitor can't clone in an afternoon.</li>
+        <li><strong>Get 50 pins from people you know</strong>, on a Google Form if you must, before building any UI. If 50 is hard, 500 is impossible and you've learned that for the price of a weekend rather than a month.</li>
+      </ul>
+      <p>Ship the map second. It's the part you can definitely finish.</p>
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<footer>
+  <span>Gurugram.rent — build plan</span>
+  <span>Prior art: bengaluru.rent, Harshit Anand, 2026</span>
+</footer>
+</div>
+
+<script>
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll('nav.toc a'));
+    var map = {};
+    links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
+    var sections = links
+      .map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); })
+      .filter(Boolean);
+    if (!('IntersectionObserver' in window) || !sections.length) return;
+    var seen = {};
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { seen[e.target.id] = e.isIntersecting; });
+      var current = null;
+      sections.forEach(function (s) { if (!current && seen[s.id]) current = s.id; });
+      links.forEach(function (a) { a.removeAttribute('aria-current'); });
+      if (current && map[current]) map[current].setAttribute('aria-current', 'true');
+    }, { rootMargin: '-10% 0px -70% 0px' });
+    sections.forEach(function (s) { io.observe(s); });
+  })();
+</script>
