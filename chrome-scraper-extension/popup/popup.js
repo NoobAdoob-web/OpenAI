@@ -978,46 +978,9 @@ function downloadCSV() {
 // ── Excel (SpreadsheetML) download — two tabs ─────────────────────────────
 //   Tab 1 "Raw Data"        : exactly as scraped
 //   Tab 2 "Top Performers"  : ranked (Rank column, sorted by performance)
+// ── Real .xlsx (OOXML) export — opens in Excel with no format warning ─────
 function downloadXLSX() {
   if (!exportRows.length) return;
-
-  const x = v => String(v ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-  const isNum = v => v !== '' && v !== null && v !== undefined && !isNaN(Number(v));
-
-  function worksheet(name, headers, rows, summaryPairs) {
-    let s = ` <Worksheet ss:Name="${x(name)}">\n  <Table>\n`;
-    // Optional analysis block at the very top (Top Performers tab)
-    if (summaryPairs && summaryPairs.length) {
-      s += `   <Row><Cell ss:StyleID="t"><Data ss:Type="String">ANALYSIS</Data></Cell></Row>\n`;
-      summaryPairs.forEach(([label, val]) => {
-        s += '   <Row>\n';
-        s += `    <Cell ss:StyleID="s"><Data ss:Type="String">${x(label)}</Data></Cell>\n`;
-        const type = isNum(val) ? 'Number' : 'String';
-        s += `    <Cell><Data ss:Type="${type}">${x(val)}</Data></Cell>\n`;
-        s += '   </Row>\n';
-      });
-      s += '   <Row></Row>\n'; // blank spacer before the table
-    }
-    s += '   <Row>\n';
-    headers.forEach(h => { s += `    <Cell ss:StyleID="h"><Data ss:Type="String">${x(h)}</Data></Cell>\n`; });
-    s += '   </Row>\n';
-    rows.forEach((row, i) => {
-      const style = i % 2 === 1 ? ' ss:StyleID="e"' : '';
-      s += '   <Row>\n';
-      headers.forEach(h => {
-        const v = row[h] ?? '';
-        const type = isNum(v) ? 'Number' : 'String';
-        s += `    <Cell${style}><Data ss:Type="${type}">${x(v)}</Data></Cell>\n`;
-      });
-      s += '   </Row>\n';
-    });
-    s += '  </Table>\n </Worksheet>\n';
-    return s;
-  }
 
   const rawHeaders = orderByPopulated(currentHeaders(), exportRows);
   const ranked = buildRanked(rawHeaders, exportRows);
@@ -1038,33 +1001,115 @@ function downloadXLSX() {
     summaryPairs.push(['Median views', a.medianViews]);
   }
   if (a.avgDurationSec) summaryPairs.push(['Average duration', secFmt(a.avgDurationSec)]);
-  // Text insight pointers
   buildInsights(exportRows).forEach((p, i) => summaryPairs.push([i === 0 ? 'Insights' : '', p.slice(0, 220)]));
 
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
- <Styles>
-  <Style ss:ID="h">
-   <Font ss:Bold="1" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#1A73E8" ss:Pattern="Solid"/>
-  </Style>
-  <Style ss:ID="e">
-   <Interior ss:Color="#F8F9FA" ss:Pattern="Solid"/>
-  </Style>
-  <Style ss:ID="t">
-   <Font ss:Bold="1" ss:Size="12" ss:Color="#137333"/>
-  </Style>
-  <Style ss:ID="s">
-   <Font ss:Bold="1" ss:Color="#33691E"/>
-  </Style>
- </Styles>
-${worksheet('Top Performers', ranked.headers, ranked.rows, summaryPairs)}${worksheet('Raw Data', rawHeaders, exportRows)}</Workbook>`;
+  const sheet1 = buildSheetXml(ranked.headers, ranked.rows, summaryPairs);
+  const sheet2 = buildSheetXml(rawHeaders, exportRows, null);
+  const bytes = buildXlsx(['Top Performers', 'Raw Data'], [sheet1, sheet2]);
 
-  triggerDownload(xml, 'application/vnd.ms-excel;charset=utf-8', `scraped_data_${ts()}.xls`);
+  triggerDownloadBytes(bytes,
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    `scraped_data_${ts()}.xlsx`);
+}
+
+const _xEsc = v => String(v ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+
+// Column index (0-based) → spreadsheet letters (0→A, 26→AA)
+function colLetter(n) {
+  let s = ''; n++;
+  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+// A cell: numeric (pure integer/decimal) → <v>, else inline string. styleIdx
+// applies a cellXfs style (1=header, 2=title, 3=label).
+function cellXml(ref, val, styleIdx) {
+  const s = styleIdx ? ` s="${styleIdx}"` : '';
+  const str = String(val ?? '');
+  if (str.trim() !== '' && /^-?\d+(\.\d+)?$/.test(str) && str.length < 16) {
+    return `<c r="${ref}"${s}><v>${str}</v></c>`;
+  }
+  if (str === '') return `<c r="${ref}"${s}/>`;
+  return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${_xEsc(str)}</t></is></c>`;
+}
+
+function buildSheetXml(headers, rows, summaryPairs) {
+  let body = '', r = 1;
+  const row = cells => { body += `<row r="${r}">${cells}</row>`; r++; };
+  if (summaryPairs && summaryPairs.length) {
+    row(cellXml('A' + r, 'ANALYSIS', 2));
+    summaryPairs.forEach(([label, val]) => { row(cellXml('A' + r, label, 3) + cellXml('B' + r, val, 0)); });
+    row(''); // blank spacer
+  }
+  row(headers.map((h, i) => cellXml(colLetter(i) + r, h, 1)).join(''));
+  rows.forEach(rowObj => { row(headers.map((h, i) => cellXml(colLetter(i) + r, rowObj[h] ?? '', 0)).join('')); });
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
+}
+
+// Assemble the OOXML package parts and zip them into a real .xlsx.
+function buildXlsx(sheetNames, sheetXmls) {
+  const sheetsMeta = sheetNames.map((n, i) => `<sheet name="${_xEsc(n).slice(0, 31)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('');
+  const wbRels = sheetNames.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')
+    + `<Relationship Id="rId${sheetNames.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`;
+  const overrides = sheetNames.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('');
+
+  const files = [
+    ['[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${overrides}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`],
+    ['_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+    ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheetsMeta}</sheets></workbook>`],
+    ['xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${wbRels}</Relationships>`],
+    ['xl/styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="12"/><color rgb="FF137333"/><name val="Calibri"/></font><font><b/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1A73E8"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`],
+  ];
+  sheetXmls.forEach((xml, i) => files.push([`xl/worksheets/sheet${i + 1}.xml`, xml]));
+
+  const enc = new TextEncoder();
+  return zipStore(files.map(([name, content]) => ({ name, data: enc.encode(content) })));
+}
+
+// ── Minimal ZIP writer (store / no compression) ───────────────────────────
+const _CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = _CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zipStore(files) {
+  const u16 = n => [n & 255, (n >> 8) & 255];
+  const u32 = n => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0;
+  for (const f of files) {
+    const nameBytes = enc.encode(f.name);
+    const crc = crc32(f.data), len = f.data.length;
+    const local = new Uint8Array([0x50, 0x4b, 0x03, 0x04, ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(len), ...u32(len), ...u16(nameBytes.length), ...u16(0)]);
+    parts.push(local, nameBytes, f.data);
+    const cd = new Uint8Array([0x50, 0x4b, 0x01, 0x02, ...u16(20), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(len), ...u32(len), ...u16(nameBytes.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]);
+    central.push(cd, nameBytes);
+    offset += local.length + nameBytes.length + len;
+  }
+  let cdSize = 0; central.forEach(c => cdSize += c.length);
+  const end = new Uint8Array([0x50, 0x4b, 0x05, 0x06, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cdSize), ...u32(offset), ...u16(0)]);
+  const all = [...parts, ...central, end];
+  let total = 0; all.forEach(a => total += a.length);
+  const out = new Uint8Array(total);
+  let p = 0; all.forEach(a => { out.set(a, p); p += a.length; });
+  return out;
+}
+
+function triggerDownloadBytes(bytes, mimeType, filename) {
+  const blob = new Blob([bytes], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  chrome.downloads.download({ url, filename, saveAs: false }, () => {
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  });
 }
 
 function triggerDownload(content, mimeType, filename) {

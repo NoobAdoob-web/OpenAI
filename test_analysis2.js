@@ -43,16 +43,11 @@ const { chromium } = require('playwright');
   console.log('Insights:'); state.insights.forEach(s=>console.log('  -',s));
   console.log('Note after fetch (should be hidden):', state.noteVisible);
 
-  // Excel includes exact first/last dates + insights
-  const xml = await page.evaluate(async ()=>{ document.getElementById('btn-xlsx').click(); await new Promise(r=>setTimeout(r,50)); const u=window.__dl&&window.__dl.url; return u? await (await fetch(u)).text() : null; });
-  const top = xml.slice(xml.indexOf('Top Performers'), xml.indexOf('Raw Data'));
-  const excelOk = top.includes('2024-03-20') && top.includes('2023-11-01') && top.includes('Insights') && top.includes('Most viewed');
-
+  // (Excel content validated in test_xlsx.js.)
   const rangeOk = state.items['Date range']==='2023-11-01 → 2024-03-20';
   const insightsOk = state.insights.some(s=>s.includes('Most viewed')&&s.includes('newest')) && state.insights.some(s=>s.includes('Most liked'));
-  const ok = rangeOk && state.items['First post']==='2024-03-20' && state.items['Last post']==='2023-11-01' && insightsOk && !state.noteVisible && excelOk && errs.length===0;
+  const ok = rangeOk && state.items['First post']==='2024-03-20' && state.items['Last post']==='2023-11-01' && insightsOk && !state.noteVisible && errs.length===0;
   if(errs.length) console.log('ERRORS:', errs.join(' | '));
-  console.log('\nExcel has exact dates + insights:', excelOk);
-  console.log(ok?'✓ PASS — endpoint dates + insights + Excel all work':'❌ FAIL');
+  console.log(ok?'✓ PASS — endpoint dates + insights work':'❌ FAIL');
   await browser.close(); process.exit(ok?0:1);
 })();

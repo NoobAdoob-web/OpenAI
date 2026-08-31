@@ -35,31 +35,11 @@ const { chromium } = require('playwright');
   }));
   console.log('Preview headers[0]:', preview.headers[0], '| row1:', preview.row1.join(' | '));
 
-  // Trigger Excel download and read the blob content
-  const xml = await page.evaluate(async ()=>{
-    document.getElementById('btn-xlsx').click();
-    await new Promise(r=>setTimeout(r,50));
-    const url = window.__dl && window.__dl.url;
-    if(!url) return null;
-    const resp = await fetch(url); return await resp.text();
-  });
-
-  const hasBothTabs = xml && xml.includes('ss:Name="Top Performers"') && xml.includes('ss:Name="Raw Data"');
-  // In Top Performers tab, the first data row should be the 2M post (Rank 1)
-  const topIdx = xml.indexOf('Top Performers');
-  const rawIdx = xml.indexOf('Raw Data');
-  const topSection = xml.slice(topIdx, rawIdx);
-  const rankedFirstIsHigh = topSection.indexOf('high') < topSection.indexOf('low') && topSection.indexOf('high') < topSection.indexOf('mid');
-  // Raw tab preserves scraped order: low, high, mid
-  const rawSection = xml.slice(rawIdx);
-  const rawOrderOk = rawSection.indexOf('low') < rawSection.indexOf('high') && rawSection.indexOf('high') < rawSection.indexOf('mid');
-
-  console.log('Two tabs present:', hasBothTabs);
-  console.log('Top Performers ranked (high first):', rankedFirstIsHigh);
-  console.log('Raw Data keeps scraped order (low,high,mid):', rawOrderOk);
+  // (Excel two-tab / ranking / raw-order content is validated in test_xlsx.js
+  //  now that the export is a real binary .xlsx, not text XML.)
   if(errs.length) console.log('ERRORS:', errs.join(' | '));
 
-  const ok = preview.headers[0]==='Rank' && preview.row1[1]==='high' && hasBothTabs && rankedFirstIsHigh && rawOrderOk && !errs.length;
-  console.log('\n'+(ok?'✓ PASS — ranking + two-tab Excel works':'❌ FAIL'));
+  const ok = preview.headers[0]==='Rank' && preview.row1[1]==='high' && !errs.length;
+  console.log('\n'+(ok?'✓ PASS — ranking preview works':'❌ FAIL'));
   await browser.close(); process.exit(ok?0:1);
 })();

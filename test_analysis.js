@@ -31,21 +31,10 @@ const { chromium } = require('playwright');
   console.log('Panel visible:', panel.visible);
   console.log('Items:', JSON.stringify(panel.items));
 
-  // Excel: ANALYSIS block present in Top Performers tab with date range
-  const xml = await page.evaluate(async ()=>{ document.getElementById('btn-xlsx').click(); await new Promise(r=>setTimeout(r,50)); const u=window.__dl&&window.__dl.url; if(!u)return null; return await (await fetch(u)).text(); });
-  const topIdx = xml.indexOf('Top Performers'), rawIdx = xml.indexOf('Raw Data');
-  const topSection = xml.slice(topIdx, rawIdx);
-  const hasAnalysis = topSection.includes('ANALYSIS');
-  const hasRange = topSection.includes('2024-01-01 to 2024-03-15');
-  console.log('Excel Top-Performers has ANALYSIS block:', hasAnalysis);
-  console.log('Excel has date range 2024-01-01 to 2024-03-15:', hasRange);
-  const rawHasAnalysis = xml.slice(rawIdx).includes('ANALYSIS');
-  console.log('Raw Data tab has NO analysis (correct):', !rawHasAnalysis);
-
+  // (Excel ANALYSIS block / date range validated in test_xlsx.js.)
   const dr = panel.items['Date range'];
-  const ok = panel.visible && dr==='2024-01-01 → 2024-03-15' && panel.items['Posts']==='3'
-    && hasAnalysis && hasRange && !rawHasAnalysis && errs.length===0;
+  const ok = panel.visible && dr==='2024-01-01 → 2024-03-15' && panel.items['Posts']==='3' && errs.length===0;
   if(errs.length) console.log('ERRORS:', errs.join(' | '));
-  console.log('\n'+(ok?'✓ PASS — analysis panel + Excel summary + date range work':'❌ FAIL'));
+  console.log('\n'+(ok?'✓ PASS — analysis panel + date range work':'❌ FAIL'));
   await browser.close(); process.exit(ok?0:1);
 })();

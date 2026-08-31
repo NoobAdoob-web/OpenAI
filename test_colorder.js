@@ -28,16 +28,9 @@ const { chromium } = require('playwright');
   console.log('Rank first:', previewHeaders[0]==='Rank');
   console.log('Max populated index:', populatedMax, '| Min blank index:', blankMin);
 
-  // Excel Raw Data tab order
-  const xml = await page.evaluate(async ()=>{ document.getElementById('btn-xlsx').click(); await new Promise(r=>setTimeout(r,50)); return window.__dl? await (await fetch(window.__dl.url)).text():null; });
-  const raw = xml.slice(xml.indexOf('Raw Data'));
-  // In Raw Data header row, Views should appear before Shares
-  const rawViewsPos = raw.indexOf('>Views<'); const rawSharesPos = raw.indexOf('>Shares<');
-  const excelOk = rawViewsPos>0 && rawSharesPos>rawViewsPos;
-
-  const ok = previewHeaders[0]==='Rank' && populatedMax < blankMin && excelOk && errs.length===0;
+  // (Excel Raw Data column order — Views before blank Shares — validated in test_xlsx.js.)
+  const ok = previewHeaders[0]==='Rank' && populatedMax < blankMin && errs.length===0;
   if(errs.length) console.log('ERRORS:', errs.join(' | '));
-  console.log('Excel Raw Data: Views before Shares:', excelOk);
   console.log('\n'+(ok?'✓ PASS — populated columns first, blank columns last':'❌ FAIL'));
   await browser.close(); process.exit(ok?0:1);
 })();

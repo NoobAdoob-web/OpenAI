@@ -6,7 +6,15 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.7.1  (current)
+v2.7.2  (current)
+------------------------------------------------------------------------
+- Excel export is now a real .xlsx file (proper OOXML, built-in zip writer),
+  so it opens in Excel with NO "format and extension don't match" warning.
+  Same two tabs (Top Performers + Raw Data), analysis block, styling, and
+  numbers kept as real numbers. CSV is unchanged.
+
+------------------------------------------------------------------------
+v2.7.1
 ------------------------------------------------------------------------
 - Fix exact date range (Instagram etc.): the per-post date read now tries
   many sources — any <time> datetime/title, JSON-LD datePublished/uploadDate,
