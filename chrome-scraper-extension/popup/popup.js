@@ -371,7 +371,8 @@ function renderAnalysis() {
     (a.withViews ? item('Avg views', numFmt(a.avgViews)) : '') +
     (a.withViews ? item('Median views', numFmt(a.medianViews)) : '') +
     (a.withViews ? item('Total views', numFmt(a.totalViews)) : '') +
-    (a.avgDurationSec ? item('Avg duration', secFmt(a.avgDurationSec)) : '');
+    (a.avgDurationSec ? item('Avg duration', secFmt(a.avgDurationSec)) : '') +
+    sampledDatesItem(item);
   box.style.display = 'grid';
 
   const pointers = buildInsights(exportRows);
@@ -382,6 +383,19 @@ function renderAnalysis() {
   } else {
     ins.style.display = 'none';
   }
+}
+
+// Show the exact dates of the sampled posts (first, middle, last) so the user
+// gets a directional read of the range, not just min/max.
+function sampledDatesItem(item) {
+  const idxs = endpointMeta.sampledIdx;
+  if (!idxs || !idxs.length) return '';
+  const dates = idxs.map(i => {
+    const r = exportRows[i];
+    return r ? (fmtDate(parseDateLoose(r['Date'])) || String(r['Date'] || '')) : '';
+  }).filter(Boolean);
+  if (dates.length < 2) return '';
+  return item('Sampled dates', dates.join('  •  '), true);
 }
 
 // Review-specific analysis: rating breakdown, avg rating, % verified, most helpful.
@@ -428,28 +442,42 @@ function setAnalysisNote(msg, cls) {
 
 // Fetch exact posting dates (+ duration) for the FIRST and LAST post so the
 // date range is accurate. Runs once per dataset; warns the user it may be slow.
+// Evenly-spaced sample indices for a dataset: first, ~1/4, ~1/2, ~3/4, last.
+function sampleIndices(n) {
+  if (n <= 0) return [];
+  if (n <= 5) return [...Array(n).keys()];
+  return [...new Set([0, Math.round(n * 0.25), Math.round(n * 0.5), Math.round(n * 0.75), n - 1])]
+    .filter(i => i >= 0 && i < n).sort((a, b) => a - b);
+}
+
 function maybeFetchEndpoints() {
   if (isReviewData()) return;   // reviews don't have per-post pages to open
-  const urls = exportRows.map(r => r['URL']).filter(u => u && /^https?:/.test(u));
-  if (urls.length < 1) return;
-  const firstU = urls[0], lastU = urls[urls.length - 1];
-  const key = firstU + '|' + lastU;
-  if (key === endpointMeta.key) return;                 // already done for this dataset
-  endpointMeta = { key, loading: true, done: false };
-  setAnalysisNote('Opening the first & last post in the background to read their exact dates — this can take 10–20 seconds. Please wait…', 'loading');
+  const idxs = sampleIndices(exportRows.length);
+  // Map sampled indices → their post URLs (skip rows without a usable URL)
+  const picked = idxs.map(i => ({ i, url: exportRows[i] && exportRows[i]['URL'] }))
+    .filter(o => o.url && /^https?:/.test(o.url));
+  if (picked.length === 0) return;
 
-  const targets = firstU === lastU ? [firstU] : [firstU, lastU];
-  chrome.runtime.sendMessage({ action: 'getPostMeta', urls: targets }).then(resp => {
+  const urls = [...new Set(picked.map(o => o.url))];
+  const key = urls.join('|');
+  if (key === endpointMeta.key) return;                 // already done for this dataset
+  endpointMeta = { key, loading: true, done: false, sampledIdx: picked.map(o => o.i) };
+
+  const est = Math.max(8, urls.length * 5);
+  setAnalysisNote(`Opening ${urls.length} posts (first, middle, last) in the background to read exact dates — about ${est}s. Please wait…`, 'loading');
+
+  chrome.runtime.sendMessage({ action: 'getPostMeta', urls }).then(resp => {
     endpointMeta.loading = false; endpointMeta.done = true;
     let got = false;
     if (resp && resp.ok && resp.meta) {
-      got = applyMeta(firstU, resp.meta[firstU]) | applyMeta(lastU, resp.meta[lastU]);
+      urls.forEach(u => { if (applyMeta(u, resp.meta[u])) got = true; });
     }
-    setAnalysisNote(got ? '' : 'Couldn’t fetch exact dates — showing dates from the grid instead.', '');
+    setAnalysisNote(got ? '' : 'Couldn’t read exact dates (login/render) — showing dates from the grid instead.', '');
     renderAnalysis();
   }).catch(() => {
     endpointMeta.loading = false;
-    setAnalysisNote('Couldn’t fetch exact dates — showing dates from the grid instead.', '');
+    setAnalysisNote('Couldn’t read exact dates — showing dates from the grid instead.', '');
+    renderAnalysis();
   });
 }
 

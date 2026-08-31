@@ -6,7 +6,18 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.7.0  (current)
+v2.7.1  (current)
+------------------------------------------------------------------------
+- Fix exact date range (Instagram etc.): the per-post date read now tries
+  many sources — any <time> datetime/title, JSON-LD datePublished/uploadDate,
+  embedded taken_at/creation_time timestamps, meta tags, then text — so dates
+  come through where they previously came back blank.
+- Instead of only the first & last post, it now samples 5 posts (first, ~25%,
+  ~50%, ~75%, last) for a directional read; the analysis shows a "Sampled
+  dates" line plus the first/last dates and the overall range.
+
+------------------------------------------------------------------------
+v2.7.0
 ------------------------------------------------------------------------
 - Collect reviews by star (Amazon): on an Amazon product/reviews page a new
   section lets you set how many 5★/4★/3★/2★/1★ reviews you want (0 = skip).

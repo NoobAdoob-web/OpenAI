@@ -461,28 +461,50 @@ function extractPostDetails(options) {
   const isYT = /youtube|youtu\.be/.test(host);
 
   // ═══════════════════ DATE ═══════════════════
+  // Robust multi-source date: any <time> datetime/title, JSON-LD
+  // datePublished/uploadDate (Instagram posts/reels ship this), embedded unix
+  // timestamps, meta tags, then a plain-text fallback.
   if (options.date) {
-    // 1) <time datetime> is the gold standard (Instagram, some others)
-    const timeEl = document.querySelector('time[datetime]');
-    if (timeEl && timeEl.getAttribute('datetime')) {
-      out.Date = timeEl.getAttribute('datetime');
-    } else if (isFB) {
-      const ts = firstMatch([
-        /"creation_time":(\d{9,13})/, /"publish_time":(\d{9,13})/,
-        /"created_time":(\d{9,13})/, /"taken_at":(\d{9,13})/
+    let val = '';
+
+    // 1) Any <time> element's datetime or title attribute
+    try {
+      for (const t of document.querySelectorAll('time')) {
+        const d = t.getAttribute('datetime') || t.getAttribute('title') || '';
+        if (d && /\d{4}/.test(d)) { val = d; break; }
+      }
+    } catch (_) {}
+
+    // 2) JSON-LD / embedded JSON (the reliable source on Instagram)
+    if (!val) {
+      const iso = firstMatch([
+        /"uploadDate"\s*:\s*"([^"]+)"/, /"datePublished"\s*:\s*"([^"]+)"/,
+        /"publishDate"\s*:\s*"(\d{4}-\d{2}-\d{2}[^"]*)"/, /"uploadDate"\s*:\s*"(\d{4}-\d{2}-\d{2}[^"]*)"/,
       ]);
-      out.Date = ts ? unixToDate(ts) : firstMatch([/([A-Z][a-z]+ \d{1,2}, \d{4})/], bodyText);
-    } else if (isIG) {
-      const ts = firstMatch([/"taken_at_timestamp":(\d{9,13})/, /"taken_at":(\d{9,13})/]);
-      out.Date = ts ? unixToDate(ts) : (timeEl?.textContent?.trim() || '');
-    } else if (isYT) {
-      out.Date = firstMatch([
-        /"publishDate":"(\d{4}-\d{2}-\d{2})/, /"uploadDate":"(\d{4}-\d{2}-\d{2})/,
-        /"dateText":\{"simpleText":"([^"]+)"/
-      ]) || firstMatch([/(?:Premiered |Streamed live on |Published on |)([A-Z][a-z]{2} \d{1,2}, \d{4})/], bodyText);
-    } else {
-      out.Date = firstMatch([/([A-Z][a-z]+ \d{1,2}, \d{4})/], bodyText);
+      if (iso) val = iso;
     }
+    if (!val) {
+      const ts = firstMatch([
+        /"taken_at_timestamp"\s*:\s*(\d{9,13})/, /"taken_at"\s*:\s*(\d{9,13})/,
+        /"device_timestamp"\s*:\s*(\d{9,13})/, /"creation_time"\s*:\s*(\d{9,13})/,
+        /"publish_time"\s*:\s*(\d{9,13})/, /"created_time"\s*:\s*(\d{9,13})/,
+      ]);
+      if (ts) val = unixToDate(ts);
+    }
+
+    // 3) Meta tags
+    if (!val) {
+      const mt = document.querySelector('meta[property="article:published_time"], meta[itemprop="datePublished"], meta[property="og:updated_time"], meta[name="date"]');
+      if (mt && mt.getAttribute('content')) val = mt.getAttribute('content');
+    }
+
+    // 4) Platform text fallbacks
+    if (!val && isYT) val = firstMatch([/"dateText":\{"simpleText":"([^"]+)"/])
+      || firstMatch([/(?:Premiered |Streamed live on |Published on |)([A-Z][a-z]{2} \d{1,2}, \d{4})/], bodyText);
+    if (!val) val = firstMatch([/([A-Z][a-z]+ \d{1,2}, \d{4})/], bodyText)
+      || firstMatch([/(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}/]);
+
+    out.Date = val || '';
   }
 
   // ═══════════════════ LIKES / REACTIONS ═══════════════════
