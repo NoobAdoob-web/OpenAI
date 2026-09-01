@@ -6,7 +6,16 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.8.0  (current)
+v2.8.1  (current)
+------------------------------------------------------------------------
+- Removed broad "<all_urls>" host permission (which forced a slow Chrome Web
+  Store in-depth review). The extension now requests access ONLY to the sites
+  it supports: YouTube, Instagram, Facebook, LinkedIn, Amazon (all major
+  marketplaces) and Flipkart. Content scripts are scoped to the same sites.
+  Trade-off: it no longer runs on arbitrary websites, only these platforms.
+
+------------------------------------------------------------------------
+v2.8.0
 ------------------------------------------------------------------------
 - Renamed the extension to "ScrapeSuite" (manifest name, popup title/header,
   README, changelog). Updated the store description.
