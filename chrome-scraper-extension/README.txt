@@ -1,5 +1,5 @@
 ========================================================================
-  INSTANT DATA SCRAPER  --  Quick Start Guide
+  SCRAPESUITE  --  Quick Start Guide
 ========================================================================
 
 A Chrome extension to pull post data (views, likes, comments, shares,

@@ -1,4 +1,4 @@
-/* Instant Data Scraper – content script */
+/* ScrapeSuite – content script */
 (function () {
   'use strict';
 

@@ -1,12 +1,18 @@
 ========================================================================
-  INSTANT DATA SCRAPER  --  CHANGELOG
+  SCRAPESUITE  --  CHANGELOG
 ========================================================================
 The version is shown in the popup header and set in manifest.json.
 Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.7.2  (current)
+v2.8.0  (current)
+------------------------------------------------------------------------
+- Renamed the extension to "ScrapeSuite" (manifest name, popup title/header,
+  README, changelog). Updated the store description.
+
+------------------------------------------------------------------------
+v2.7.2
 ------------------------------------------------------------------------
 - Excel export is now a real .xlsx file (proper OOXML, built-in zip writer),
   so it opens in Excel with NO "format and extension don't match" warning.
