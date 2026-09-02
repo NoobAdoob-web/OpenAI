@@ -172,7 +172,7 @@
     <div class="section" id="ocr-section">
       <label class="deep-master">
         <input type="checkbox" id="ocr-toggle">
-        <span class="deep-master-label">🖼️ Read text from images <span class="deep-sub">— OCR + content type + language</span></span>
+        <span class="deep-master-label">🖼️ Read text from images <span class="deep-sub">— PP-OCRv4 + content type + language</span></span>
       </label>
 
       <div id="ocr-options" style="display:none">
@@ -185,7 +185,7 @@
           <strong>⚠ About image reading:</strong>
           <ul>
             <li>Adds <b>Image Text</b>, <b>Content Type</b> (Offer-led / Product-led / Festive / …) and <b>Image Language</b> columns.</li>
-            <li>Reads <b>English &amp; Hindi</b> only. Other scripts (Punjabi, Malayalam, Tamil…) are marked <b>Regional asset</b>.</li>
+            <li>Uses <b>PaddleOCR PP-OCRv4</b> on-device — strong on stylized marketing text. Reads <b>English / Latin</b> script.</li>
             <li>Reads each post's <b>full-size image</b> (not the small thumbnail) for better accuracy — so allow ~2–4s per image.</li>
             <li>Runs on-device — nothing leaves your browser. Stay logged in.</li>
             <li>Works on the images already loaded above — scrape first.</li>

@@ -67,9 +67,12 @@ Tick "Read text from images" and click "Read images". For each post it:
       (Offer-led / Product-led / Festive / Informational)
   - detects the language              -> Image Language column
 
-Reads ENGLISH and HINDI only. Other scripts (Punjabi, Malayalam, Tamil,
-etc.) are labelled "Regional asset". Runs fully on-device (nothing leaves
-your browser); each image takes ~1-3 seconds. Scrape first, then read.
+Uses PaddleOCR PP-OCRv4 (detection + recognition) via onnxruntime-web,
+running FULLY ON-DEVICE (nothing leaves your browser). It is much stronger
+than the old engine on stylized marketing text over busy backgrounds
+(reel thumbnails, posters). Reads ENGLISH / Latin script. Each image takes
+~2-4 seconds (it reads the full-size cover image, not the thumbnail).
+Scrape first, then read.
 
 
 ------------------------------------------------------------------------

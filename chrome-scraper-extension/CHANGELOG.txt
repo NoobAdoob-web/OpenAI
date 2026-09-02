@@ -6,7 +6,25 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.8.1  (current)
+v2.9.0  (current)
+------------------------------------------------------------------------
+- New OCR engine: image reading now uses PaddleOCR PP-OCRv4 (text detection
+  + recognition) running on onnxruntime-web (WASM), fully on-device. This is
+  a big accuracy jump over the previous engine on stylized marketing text —
+  coloured/decorative fonts on busy backgrounds, e.g. reel thumbnails and
+  posters. Detection post-processing is a light connected-components pass
+  (no OpenCV), so the engine has no eval/new-Function and runs under the
+  extension's strict CSP.
+- Scope: reads ENGLISH / Latin script. (The previous build also attempted
+  Hindi via Tesseract; the Devanagari PP-OCR model is a planned add-on.)
+- Verified end-to-end against sample marketing graphics: coloured headline +
+  offer text read correctly at 95-100% confidence.
+- Bundle grows (~+15 MB: models + WASM runtime) — the cost of accurate,
+  private, on-device OCR with no API keys or backend.
+- Removed the bundled Tesseract engine and language packs.
+
+------------------------------------------------------------------------
+v2.8.1
 ------------------------------------------------------------------------
 - Removed broad "<all_urls>" host permission (which forced a slow Chrome Web
   Store in-depth review). The extension now requests access ONLY to the sites

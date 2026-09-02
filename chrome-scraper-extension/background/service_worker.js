@@ -175,9 +175,10 @@ function extractAmazonReviewsPage() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-//  IMAGE OCR — reads text from each post's image (Tesseract, English + Hindi),
-//  classifies the content type, and detects the language. Heavy work runs in
-//  an offscreen document because the service worker can't spawn Web Workers.
+//  IMAGE OCR — reads text from each post's image (PaddleOCR PP-OCRv4 via
+//  onnxruntime-web, English/Latin), classifies the content type, and detects
+//  the language. Heavy work runs in an offscreen document because the MV3
+//  service worker can't provide a DOM/canvas + WASM runtime.
 // ══════════════════════════════════════════════════════════════════════════
 const OCR = { active: false };
 
@@ -189,8 +190,8 @@ async function ensureOffscreen() {
   try {
     await chrome.offscreen.createDocument({
       url: 'offscreen/ocr.html',
-      reasons: ['WORKERS'],
-      justification: 'Run on-device OCR (Tesseract) on post images.',
+      reasons: ['DOM_SCRAPING'],
+      justification: 'Run on-device OCR (PaddleOCR PP-OCRv4 / WASM) on post images.',
     });
   } catch (e) {
     // Already exists / race — ignore
@@ -291,10 +292,9 @@ async function startOcr(msg) {
     }
 
     const language = detectLanguage(text, conf);
-    const regional = language === 'Regional / Other';
     const fields = {
-      ImageText: regional ? '(regional/other script — pack not installed)' : text,
-      ContentType: regional ? 'Regional asset' : classifyContent(text),
+      ImageText: text,
+      ContentType: classifyContent(text),
       Language: language,
       _err: err,
     };
@@ -309,18 +309,14 @@ async function startOcr(msg) {
   try { await chrome.offscreen.closeDocument(); } catch (_) {}
 }
 
-// ── Language detection (script-based; we only OCR English + Hindi) ──────────
+// ── Language detection (the PP-OCRv4 model we ship reads English/Latin) ─────
 function detectLanguage(text, conf) {
   if (!text) return '';
-  const devanagari = (text.match(/[ऀ-ॿ]/g) || []).length;
   const latin = (text.match(/[A-Za-z]/g) || []).length;
-  const letters = devanagari + latin;
-  if (letters < 2) return '';
-  // Low confidence + not clearly Latin/Devanagari → a script we can't read.
-  if (conf < 55 && devanagari / (letters || 1) < 0.3) return 'Regional / Other';
-  if (devanagari >= latin && devanagari > 0) return 'Hindi';
-  if (latin > 0) return 'English';
-  return 'Regional / Other';
+  const digits = (text.match(/[0-9]/g) || []).length;
+  if (latin >= 2) return 'English';
+  if (latin + digits >= 2) return 'English';
+  return '';
 }
 
 // ── Content-type classification (keyword rules; editable) ───────────────────

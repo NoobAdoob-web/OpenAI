@@ -47,10 +47,10 @@ tabs
   lookups, then close it after reading the visible data.
 
 offscreen
-  Used to run the bundled on-device OCR engine (Tesseract), which requires
-  a DOM/Web Worker context the service worker cannot provide. It is used
-  solely to read text from post images locally; no image or text leaves
-  the device.
+  Used to run the bundled on-device OCR engine (PaddleOCR PP-OCRv4 on
+  onnxruntime-web/WASM), which needs a DOM/canvas + WASM context the service
+  worker cannot provide. It is used solely to read text from post images
+  locally; no image or text leaves the device.
 
 Host permissions (youtube.com, instagram.com, facebook.com, linkedin.com,
 amazon.* , flipkart.com, ytimg.com)
