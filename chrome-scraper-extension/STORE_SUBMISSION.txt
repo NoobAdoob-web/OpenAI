@@ -1,0 +1,121 @@
+========================================================================
+  SCRAPESUITE  --  CHROME WEB STORE SUBMISSION COPY
+========================================================================
+Paste these into the Chrome Web Store Developer Dashboard when
+submitting/updating the listing. All copy is accurate to the extension's
+actual behaviour: everything runs on-device, no backend, nothing is sent
+to the developer or any third party.
+
+
+------------------------------------------------------------------------
+1. SINGLE PURPOSE DESCRIPTION   (Dashboard -> Privacy practices -> Single purpose)
+------------------------------------------------------------------------
+ScrapeSuite lets users export publicly visible social-media posts and
+product reviews from a supported page (YouTube, Instagram, Facebook,
+LinkedIn, Amazon, Flipkart) into a ranked, analysis-ready CSV/Excel
+spreadsheet, with basic on-device analytics.
+
+
+------------------------------------------------------------------------
+2. PERMISSION JUSTIFICATIONS   (Dashboard -> Privacy practices)
+------------------------------------------------------------------------
+
+activeTab
+  Used to read the content of the tab the user is actively viewing when
+  they click the ScrapeSuite icon, so it can detect and extract the posts
+  or reviews visible on that page.
+
+scripting
+  Used to inject ScrapeSuite's extraction logic into the supported pages
+  (and into pages it opens in the background for deep data) so it can read
+  the publicly visible post/review content and run on-device image OCR.
+  No remote code is injected -- all scripts are bundled in the package.
+
+storage
+  Used to remember the user's in-popup settings and in-progress results
+  (selected fields, collected rows) so data isn't lost when the popup is
+  closed and reopened. Stored locally only.
+
+downloads
+  Used to save the exported spreadsheet (CSV / .xlsx) to the user's own
+  computer when they click Download.
+
+tabs
+  Used to (a) read the active tab's URL to know which supported platform/
+  product the user is on, and (b) open a post's or review page in a
+  background tab during "Deep Scrape", "Collect reviews", and exact-date
+  lookups, then close it after reading the visible data.
+
+offscreen
+  Used to run the bundled on-device OCR engine (Tesseract), which requires
+  a DOM/Web Worker context the service worker cannot provide. It is used
+  solely to read text from post images locally; no image or text leaves
+  the device.
+
+Host permissions (youtube.com, instagram.com, facebook.com, linkedin.com,
+amazon.* , flipkart.com, ytimg.com)
+  ScrapeSuite only functions on these specific sites. Access is needed to
+  run the content script on the page the user opens, read the publicly
+  visible posts/reviews, fetch full-resolution images and post dates from
+  those same domains, and open their post/review pages in background tabs
+  for complete data. It requests no access to any other websites.
+
+Are you using remote code?  ->  NO
+  All executable code, including the OCR engine and its English/Hindi
+  language data, is bundled inside the extension package. Nothing is
+  fetched or executed from a remote server.
+
+
+------------------------------------------------------------------------
+3. DATA USAGE DISCLOSURES   (Dashboard -> Privacy practices -> Data usage)
+------------------------------------------------------------------------
+ScrapeSuite processes page content locally on the user's device and only
+lets the user download it -- it does NOT transmit any data to the
+developer or third parties (there is no backend/server). Under Chrome's
+definition, "collection" means obtaining AND transmitting data off the
+device, which ScrapeSuite does not do.
+
+Data types collected:
+  Select NONE of the categories (no PII, financial info, authentication
+  info, personal communications, location, web history, etc.).
+
+Certifications (tick all three):
+  [x] I do not sell or transfer user data to third parties, apart from
+      the approved use cases.
+  [x] I do not use or transfer user data for purposes unrelated to my
+      item's single purpose.
+  [x] I do not use or transfer user data to determine creditworthiness
+      or for lending.
+
+NOTE: Because the extension reads on-screen "website content", a reviewer
+might ask you to tick the "Website content" box. If they push back, tick
+it and add:
+  "Website content (public posts/reviews) is read only to build the
+   spreadsheet the user downloads; it is processed entirely on-device and
+   never transmitted to us or any third party."
+
+
+------------------------------------------------------------------------
+4. PRIVACY POLICY   (host this text somewhere and paste the URL)
+------------------------------------------------------------------------
+The store requires a privacy-policy URL when host permissions are
+requested. Host the text below on any public page (GitHub Pages, a public
+Google Doc, a Notion public page) and paste the URL into the dashboard.
+
+  ScrapeSuite -- Privacy Policy
+
+  ScrapeSuite does not collect, store, sell, or transmit any personal
+  data. All scraping, on-device OCR, analysis, and file export happen
+  locally in your browser. The extension has no backend server and sends
+  no data to the developer or any third party. It only reads the content
+  of supported pages (YouTube, Instagram, Facebook, LinkedIn, Amazon,
+  Flipkart) that you actively choose to scrape, solely to produce the
+  spreadsheet you download. Settings and in-progress results are stored
+  locally via Chrome storage and never leave your device.
+
+  Contact: <your email>
+
+TODO before submitting:
+  - Add your contact email to the privacy policy.
+  - Host the policy and paste its URL into the dashboard.
+========================================================================
