@@ -2686,40 +2686,40 @@ function loadImage(src) {
 }
 async function toRGBA(dataUrl) {
   const img = await loadImage(dataUrl);
+  let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+  const longest = Math.max(w, h) || 1;
+  const scale = longest < 900 ? Math.min(3, 1280 / longest) : 1;
+  w = Math.round(w * scale);
+  h = Math.round(h * scale);
   const c = document.createElement("canvas");
-  c.width = img.naturalWidth || img.width;
-  c.height = img.naturalHeight || img.height;
+  c.width = w;
+  c.height = h;
   const ctx = c.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(img, 0, 0);
-  const id = ctx.getImageData(0, 0, c.width, c.height);
-  return { data: id.data, width: c.width, height: c.height };
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0, w, h);
+  const id = ctx.getImageData(0, 0, w, h);
+  return { data: id.data, width: w, height: h };
 }
 function resizeRGBA(src, sw, sh, dw, dh) {
   const out = new Uint8ClampedArray(dw * dh * 4);
   const xr2 = sw / dw, yr2 = sh / dh;
   for (let y = 0; y < dh; y++) {
-    const sy = Math.min(sh - 1, (y + 0.5) * yr2 - 0.5);
-    const y0 = Math.max(0, Math.floor(sy));
-    const y1 = Math.min(sh - 1, y0 + 1);
-    const wy = sy - y0;
+    const sy = Math.min(sh - 1, (y + 0.5) * yr2 - 0.5), y0 = Math.max(0, Math.floor(sy)), y1 = Math.min(sh - 1, y0 + 1), wy = sy - y0;
     for (let x = 0; x < dw; x++) {
-      const sx = Math.min(sw - 1, (x + 0.5) * xr2 - 0.5);
-      const x0 = Math.max(0, Math.floor(sx));
-      const x1 = Math.min(sw - 1, x0 + 1);
-      const wx = sx - x0;
+      const sx = Math.min(sw - 1, (x + 0.5) * xr2 - 0.5), x0 = Math.max(0, Math.floor(sx)), x1 = Math.min(sw - 1, x0 + 1), wx = sx - x0;
       const i00 = (y0 * sw + x0) * 4, i01 = (y0 * sw + x1) * 4, i10 = (y1 * sw + x0) * 4, i11 = (y1 * sw + x1) * 4, o = (y * dw + x) * 4;
       for (let c = 0; c < 4; c++) {
-        const top = src[i00 + c] * (1 - wx) + src[i01 + c] * wx, bot = src[i10 + c] * (1 - wx) + src[i11 + c] * wx;
-        out[o + c] = top * (1 - wy) + bot * wy;
+        const t = src[i00 + c] * (1 - wx) + src[i01 + c] * wx, b = src[i10 + c] * (1 - wx) + src[i11 + c] * wx;
+        out[o + c] = t * (1 - wy) + b * wy;
       }
     }
   }
   return out;
 }
-async function detect(img, W, H) {
+async function detLines(img, W, H) {
   const sess = await getDet();
-  const cap = 960;
-  const scale = Math.min(1, cap / Math.max(W, H));
+  const cap = 960, scale = Math.min(1, cap / Math.max(W, H));
   const W2 = Math.max(32, Math.round(W * scale / 32) * 32), H2 = Math.max(32, Math.round(H * scale / 32) * 32);
   const r = resizeRGBA(img, W, H, W2, H2);
   const mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225];
@@ -2734,9 +2734,8 @@ async function detect(img, W, H) {
   const oh = out.dims[2], ow = out.dims[3], prob = out.data;
   const bin = new Uint8Array(ow * oh);
   for (let i = 0; i < ow * oh; i++) bin[i] = prob[i] > 0.3 ? 1 : 0;
-  const boxes = [];
-  const seen = new Uint8Array(ow * oh);
-  const stack = [];
+  const seen = new Uint8Array(ow * oh), stack = [];
+  const comps = [];
   const sx = W / ow, sy = H / oh;
   for (let y = 0; y < oh; y++) for (let x = 0; x < ow; x++) {
     const idx = y * ow + x;
@@ -2746,8 +2745,7 @@ async function detect(img, W, H) {
     stack.push(idx);
     seen[idx] = 1;
     while (stack.length) {
-      const p = stack.pop();
-      const py = p / ow | 0, px = p % ow;
+      const p = stack.pop(), py = p / ow | 0, px = p % ow;
       area++;
       if (px < minx) minx = px;
       if (px > maxx) maxx = px;
@@ -2763,14 +2761,33 @@ async function detect(img, W, H) {
         }
       }
     }
-    const bw = maxx - minx + 1, bh = maxy - miny + 1;
-    if (area < 10 || bh < 3 || bw < 3) continue;
-    const padx = Math.round(bh * sy * 0.6), pady = Math.round(bh * sy * 0.35);
-    const ox0 = Math.max(0, Math.round(minx * sx) - padx), oy0 = Math.max(0, Math.round(miny * sy) - pady);
-    const ox1 = Math.min(W, Math.round((maxx + 1) * sx) + padx), oy1 = Math.min(H, Math.round((maxy + 1) * sy) + pady);
-    boxes.push({ x: ox0, y: oy0, w: ox1 - ox0, h: oy1 - oy0, cy: (oy0 + oy1) / 2 });
+    if (area < 6) continue;
+    comps.push({ x0: minx * sx, x1: (maxx + 1) * sx, y0: miny * sy, y1: (maxy + 1) * sy });
   }
-  return boxes;
+  comps.sort((a, b) => a.y0 - b.y0);
+  const lines = [];
+  for (const c of comps) {
+    let m = null;
+    for (const l of lines) {
+      const oy = Math.min(l.y1, c.y1) - Math.max(l.y0, c.y0);
+      const h = Math.min(l.y1 - l.y0, c.y1 - c.y0);
+      if (oy > 0.5 * h) {
+        m = l;
+        break;
+      }
+    }
+    if (m) {
+      m.x0 = Math.min(m.x0, c.x0);
+      m.x1 = Math.max(m.x1, c.x1);
+      m.y0 = Math.min(m.y0, c.y0);
+      m.y1 = Math.max(m.y1, c.y1);
+    } else lines.push({ ...c });
+  }
+  return lines.map((l) => {
+    const h = l.y1 - l.y0, pad = Math.max(3, h * 0.5);
+    const x = Math.max(0, Math.round(l.x0 - pad)), y = Math.max(0, Math.round(l.y0 - pad));
+    return { x, y, w: Math.min(W, Math.round(l.x1 + pad)) - x, h: Math.min(H, Math.round(l.y1 + pad)) - y, cy: (l.y0 + l.y1) / 2 };
+  });
 }
 function cropRGBA(src, W, H, b) {
   const out = new Uint8ClampedArray(b.w * b.h * 4);
@@ -2794,12 +2811,42 @@ function decodeCTC(dict, idx, prob) {
   const mean = cf.length ? cf.reduce((a, b) => a + b, 0) / cf.length : 0;
   return { text: cs2.join(""), mean };
 }
-async function recognize(dict, crop, cw, ch) {
+async function recognize(dict, cr, cw, ch) {
   const sess = await getRec();
-  const Hh = 48, Wr2 = Math.max(16, Math.round(cw * 48 / ch));
-  const r = resizeRGBA(crop, cw, ch, Wr2, Hh);
-  const n = Wr2 * Hh;
-  const R = [], G2 = [], B = [];
+  const Hh = 48, W0 = Math.max(16, Math.round(cw * 48 / ch));
+  const r0 = resizeRGBA(cr, cw, ch, W0, Hh);
+  const mcol = [0, 0, 0];
+  {
+    const px = [];
+    for (let x = 0; x < W0; x++) for (const yy of [0, Hh - 1]) {
+      const o = (yy * W0 + x) * 4;
+      px.push([r0[o], r0[o + 1], r0[o + 2]]);
+    }
+    px.sort((a, b) => a[0] + a[1] + a[2] - (b[0] + b[1] + b[2]));
+    const m = px[Math.floor(px.length / 2)] || [0, 0, 0];
+    mcol[0] = m[0];
+    mcol[1] = m[1];
+    mcol[2] = m[2];
+  }
+  const MARG = Math.round(Hh * 0.6);
+  const Wr2 = W0 + 2 * MARG;
+  const r = new Uint8ClampedArray(Wr2 * Hh * 4);
+  for (let y = 0; y < Hh; y++) for (let x = 0; x < Wr2; x++) {
+    const o = (y * Wr2 + x) * 4;
+    const sx = x - MARG;
+    if (sx >= 0 && sx < W0) {
+      const so2 = (y * W0 + sx) * 4;
+      r[o] = r0[so2];
+      r[o + 1] = r0[so2 + 1];
+      r[o + 2] = r0[so2 + 2];
+    } else {
+      r[o] = mcol[0];
+      r[o + 1] = mcol[1];
+      r[o + 2] = mcol[2];
+    }
+    r[o + 3] = 255;
+  }
+  const n = Wr2 * Hh, R = [], G2 = [], B = [];
   for (let i = 0; i < n; i++) {
     R.push(r[i * 4] / 255);
     G2.push(r[i * 4 + 1] / 255);
@@ -2823,28 +2870,20 @@ async function recognize(dict, crop, cw, ch) {
 async function runOcr(dataUrl) {
   const dict = await loadDict();
   const { data, width, height } = await toRGBA(dataUrl);
-  const boxes = await detect(data, width, height);
-  boxes.sort((a, b) => Math.abs(a.cy - b.cy) > 10 ? a.cy - b.cy : a.x - b.x);
-  const items = [];
-  for (const b of boxes) {
-    const c = cropRGBA(data, width, height, b);
-    const r = await recognize(dict, c, b.w, b.h);
-    if (r.text && r.text.trim() && r.mean >= 0.5) items.push({ text: r.text.trim(), mean: r.mean, cy: b.cy });
-  }
-  const lines = [];
-  let cur = null;
-  for (const it of items) {
-    if (cur && Math.abs(it.cy - cur.cy) <= 14) {
-      cur.parts.push(it.text);
-      cur.confs.push(it.mean);
-    } else {
-      cur = { cy: it.cy, parts: [it.text], confs: [it.mean] };
-      lines.push(cur);
+  let lines = await detLines(data, width, height);
+  lines.sort((a, b) => a.cy - b.cy);
+  const out = [], confs = [];
+  for (const L of lines) {
+    if (L.w < 4 || L.h < 4) continue;
+    const r = await recognize(dict, cropRGBA(data, width, height, L), L.w, L.h);
+    const t = (r.text || "").replace(/\s+/g, " ").trim();
+    if (t && r.mean >= 0.45) {
+      out.push(t);
+      confs.push(r.mean);
     }
   }
-  const text = lines.map((l) => l.parts.join(" ")).join("\n").trim();
-  const allc = items.map((i) => i.mean);
-  const conf = allc.length ? Math.round(100 * allc.reduce((a, b) => a + b, 0) / allc.length) : 0;
+  const text = out.join("\n").trim();
+  const conf = confs.length ? Math.round(100 * confs.reduce((a, b) => a + b, 0) / confs.length) : 0;
   return { text, conf };
 }
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

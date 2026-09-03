@@ -6,7 +6,21 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.9.0  (current)
+v2.9.1  (current)
+------------------------------------------------------------------------
+- OCR accuracy pass on the bundled PP-OCRv4 model (no model change):
+  * Word spacing: text lines are now recognised as whole merged lines with
+    generous padding + synthetic margins, so the model emits spaces
+    natively. Fixes "UsecodeSAVE20" -> "Use code SAVE20".
+  * Edge letters no longer clipped (fixes "ntroducing" -> "Introducing").
+  * Small thumbnails are upscaled before OCR for better recall.
+  Verified on stylised marketing samples: "MEGA SALE", "Shop Now - Limited
+  Time", "Buy 1 Get 1 Free", "Introducing the new" all read correctly with
+  spaces (95-100%). Note: reels with text burned into the VIDEO (not the
+  cover image) still need video-frame sampling — coming next.
+
+------------------------------------------------------------------------
+v2.9.0
 ------------------------------------------------------------------------
 - New OCR engine: image reading now uses PaddleOCR PP-OCRv4 (text detection
   + recognition) running on onnxruntime-web (WASM), fully on-device. This is

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ScrapeSuite",
-  "version": "2.9.0",
+  "version": "2.9.1",
   "description": "Scrape posts & reviews from YouTube, Instagram, Facebook, LinkedIn & Amazon into ranked, analysis-ready Excel/CSV.",
   "icons": {
     "16": "icons/icon.svg",
