@@ -6,7 +6,16 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.10.0  (current)
+v2.10.1  (current)
+------------------------------------------------------------------------
+- FIX: "Could not decode image: 'icon.svg'" on the Chrome Web Store, which
+  left the listing spinning and blocked Add to Chrome. Chrome extensions do
+  NOT support SVG icons - manifest "icons" and "action.default_icon" must be
+  raster PNG. Shipped real PNG icons at 16/32/48/128 (rendered from the same
+  artwork) and pointed the manifest and popup header at them.
+
+------------------------------------------------------------------------
+v2.10.0
 ------------------------------------------------------------------------
 - POST COPY / DESCRIPTION for every post. On a reels or posts GRID the
   caption is never rendered into the tile, which is why the Caption column
