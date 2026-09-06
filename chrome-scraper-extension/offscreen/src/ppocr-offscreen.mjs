@@ -11,11 +11,18 @@ ort.env.wasm.wasmPaths = BASE;
 ort.env.wasm.numThreads = 1;
 try { ort.env.wasm.proxy = false; } catch (_) {}
 
-let dictArr = null, detSess = null, recSess = null;
+let dictArr = null, detSess = null, recSess = null, allowMask = null;
 async function loadDict() {
   if (dictArr) return dictArr;
   const txt = await (await fetch(BASE + 'ppocr_keys_v1.txt')).text();
   dictArr = [...txt.split('\n'), ' '];
+  // Latin-only mask: we ship the Chinese PP-OCRv4 model, which can otherwise
+  // emit stray CJK glyphs on English creatives. Blocking non-Latin classes
+  // removes that noise.
+  allowMask = new Uint8Array(dictArr.length + 1);
+  allowMask[0] = 1; // CTC blank
+  const LATIN = /^[\x20-\x7E\u00A0-\u00FF\u2018\u2019\u201C\u201D\u2013\u2014\u20B9]$/;
+  for (let i = 0; i < dictArr.length; i++) allowMask[i + 1] = (dictArr[i] && LATIN.test(dictArr[i])) ? 1 : 0;
   return dictArr;
 }
 function getDet() { if (!detSess) detSess = ort.InferenceSession.create(BASE + 'ch_PP-OCRv4_det_infer.onnx', { executionProviders: ['wasm'] }); return detSess; }
@@ -28,8 +35,10 @@ function loadImage(src) { return new Promise((res, rej) => { const i = new Image
 async function toRGBA(dataUrl) {
   const img = await loadImage(dataUrl);
   let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+  // Upscale to ~1280 on the long edge. Measured: this is what recovers word
+  // spaces on SMALL on-image text (e.g. legal/strap lines on reel covers).
   const longest = Math.max(w, h) || 1;
-  const scale = longest < 900 ? Math.min(3, 1280 / longest) : 1;
+  const scale = longest < 1280 ? Math.min(3, 1280 / longest) : 1;
   w = Math.round(w * scale); h = Math.round(h * scale);
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -56,7 +65,7 @@ function resizeRGBA(src, sw, sh, dw, dh) {
 // Detection → connected components → merge into LINE boxes (with generous pad).
 async function detLines(img, W, H) {
   const sess = await getDet();
-  const cap = 960, scale = Math.min(1, cap / Math.max(W, H));
+  const cap = 1280, scale = Math.min(2.5, cap / Math.max(W, H));
   const W2 = Math.max(32, Math.round(W * scale / 32) * 32), H2 = Math.max(32, Math.round(H * scale / 32) * 32);
   const r = resizeRGBA(img, W, H, W2, H2);
   const mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]; const n = W2 * H2; const data = new Float32Array(3 * n);
@@ -96,7 +105,14 @@ async function recognize(dict, cr, cw, ch) {
   for (let i = 0; i < n; i++) { R.push(r[i * 4] / 255); G.push(r[i * 4 + 1] / 255); B.push(r[i * 4 + 2] / 255); }
   const out = (await sess.run({ x: new ort.Tensor('float32', Float32Array.from([...B, ...G, ...R]), [1, 3, Hh, Wr]) }))['softmax_11.tmp_0'];
   const predLen = out.dims[2]; const idx = [], prob = [];
-  for (let i = 0; i < out.data.length; i += predLen) { const a = out.data.slice(i, i + predLen); let m = -Infinity, mi = 0; for (let k = 0; k < a.length; k++) if (a[k] > m) { m = a[k]; mi = k; } idx.push(mi); prob.push(m); }
+  for (let i = 0; i < out.data.length; i += predLen) {
+    const a = out.data.slice(i, i + predLen); let m = -Infinity, mi = 0;
+    for (let k = 0; k < a.length; k++) {
+      if (allowMask && k < allowMask.length && !allowMask[k]) continue; // Latin-only
+      if (a[k] > m) { m = a[k]; mi = k; }
+    }
+    idx.push(mi); prob.push(m);
+  }
   return decodeCTC(dict, idx, prob);
 }
 

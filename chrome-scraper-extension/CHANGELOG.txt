@@ -6,7 +6,27 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.9.1  (current)
+v2.9.2  (current)
+------------------------------------------------------------------------
+- OCR tuning round driven by real scraped data (204 rows) + annotated
+  feedback. Measured on a hard, realistic test set (text over video-like
+  backgrounds, wide letter-spacing, translucency, motion blur, small strap
+  lines): accuracy 96.9% -> 98.4%, no empty results.
+  * Source is upscaled to ~1280px before OCR - this is what recovers word
+    spaces on SMALL on-image text ("PoweredbySnapdragon" -> "Powered by
+    Snapdragon customized for Galaxy").
+  * Detection now runs at 1280px (was capped at 960px).
+  * Latin-only output mask: stops stray Chinese glyphs (e.g. a lone CJK
+    character) appearing in Image Text, since the bundled model is the
+    Chinese PP-OCRv4 model.
+- Known model limit: capital "I" vs lowercase "l" are identical glyphs in
+  most sans fonts, so "Bespoke AI" can read as "Bespoke Al".
+- IMPORTANT: reels keep most of their text in the VIDEO, not the cover
+  image. Cover-only OCR therefore misses it (22% of rows came back empty).
+  Multi-frame video reading is the next step.
+
+------------------------------------------------------------------------
+v2.9.1
 ------------------------------------------------------------------------
 - OCR accuracy pass on the bundled PP-OCRv4 model (no model change):
   * Word spacing: text lines are now recognised as whole merged lines with

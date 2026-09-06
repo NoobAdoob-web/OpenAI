@@ -2662,10 +2662,15 @@ try {
 var dictArr = null;
 var detSess = null;
 var recSess = null;
+var allowMask = null;
 async function loadDict() {
   if (dictArr) return dictArr;
   const txt = await (await fetch(BASE + "ppocr_keys_v1.txt")).text();
   dictArr = [...txt.split("\n"), " "];
+  allowMask = new Uint8Array(dictArr.length + 1);
+  allowMask[0] = 1;
+  const LATIN = /^[\x20-\x7E\u00A0-\u00FF\u2018\u2019\u201C\u201D\u2013\u2014\u20B9]$/;
+  for (let i = 0; i < dictArr.length; i++) allowMask[i + 1] = dictArr[i] && LATIN.test(dictArr[i]) ? 1 : 0;
   return dictArr;
 }
 function getDet() {
@@ -2688,7 +2693,7 @@ async function toRGBA(dataUrl) {
   const img = await loadImage(dataUrl);
   let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
   const longest = Math.max(w, h) || 1;
-  const scale = longest < 900 ? Math.min(3, 1280 / longest) : 1;
+  const scale = longest < 1280 ? Math.min(3, 1280 / longest) : 1;
   w = Math.round(w * scale);
   h = Math.round(h * scale);
   const c = document.createElement("canvas");
@@ -2719,7 +2724,7 @@ function resizeRGBA(src, sw, sh, dw, dh) {
 }
 async function detLines(img, W, H) {
   const sess = await getDet();
-  const cap = 960, scale = Math.min(1, cap / Math.max(W, H));
+  const cap = 1280, scale = Math.min(2.5, cap / Math.max(W, H));
   const W2 = Math.max(32, Math.round(W * scale / 32) * 32), H2 = Math.max(32, Math.round(H * scale / 32) * 32);
   const r = resizeRGBA(img, W, H, W2, H2);
   const mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225];
@@ -2858,9 +2863,12 @@ async function recognize(dict, cr, cw, ch) {
   for (let i = 0; i < out.data.length; i += predLen) {
     const a = out.data.slice(i, i + predLen);
     let m = -Infinity, mi = 0;
-    for (let k = 0; k < a.length; k++) if (a[k] > m) {
-      m = a[k];
-      mi = k;
+    for (let k = 0; k < a.length; k++) {
+      if (allowMask && k < allowMask.length && !allowMask[k]) continue;
+      if (a[k] > m) {
+        m = a[k];
+        mi = k;
+      }
     }
     idx.push(mi);
     prob.push(m);
