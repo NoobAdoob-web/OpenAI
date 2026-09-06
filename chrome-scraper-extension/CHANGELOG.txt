@@ -6,7 +6,26 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.9.2  (current)
+v2.10.0  (current)
+------------------------------------------------------------------------
+- POST COPY / DESCRIPTION for every post. On a reels or posts GRID the
+  caption is never rendered into the tile, which is why the Caption column
+  came back empty for every row. ScrapeSuite now reads the post copy from
+  the data the page itself already loads: a small hook runs in the page and
+  observes Instagram's / Facebook's own API responses (read-only, nothing
+  is requested or sent anywhere) and hands over the caption per post.
+  The same source also fills:
+    * Date      (exact upload date - was blank on 98% of rows)
+    * Duration  (real video length, e.g. 0:15 - was blank on 100% of rows)
+    * EXACT counts (85700 rather than the grid's rounded "85.7K"); the
+      numeric columns now carry the precise value for analysis.
+  No extra page loads and no Deep Scrape needed - captions arrive as you
+  scroll. Deep Scrape still fills anything the API did not provide.
+- URL and Thumbnail columns are now pinned to the FAR RIGHT of the preview,
+  CSV and both Excel tabs, so the readable content comes first.
+
+------------------------------------------------------------------------
+v2.9.2
 ------------------------------------------------------------------------
 - OCR tuning round driven by real scraped data (204 rows) + annotated
   feedback. Measured on a hard, realistic test set (text over video-like

@@ -118,14 +118,24 @@ function currentHeaders() {
 // Move columns that have at least one value to the front, and fully-blank
 // columns (not available for this platform/output, e.g. Shares on Instagram)
 // to the end — keeping each group's original order.
+// Columns that are reference links rather than analysis data. They are always
+// pushed to the far right so the readable content (caption, metrics) comes
+// first when the sheet is opened.
+const TRAILING_COLUMNS = ['URL', 'Thumbnail'];
+
 function orderByPopulated(headers, rows) {
   const isBlank = h => rows.every(r => {
     const v = r[h];
     return v === undefined || v === null || String(v).trim() === '';
   });
-  const filled = [], empty = [];
-  headers.forEach(h => (isBlank(h) ? empty : filled).push(h));
-  return [...filled, ...empty];
+  const filled = [], empty = [], trailing = [];
+  headers.forEach(h => {
+    if (TRAILING_COLUMNS.includes(h)) trailing.push(h);
+    else (isBlank(h) ? empty : filled).push(h);
+  });
+  // keep TRAILING_COLUMNS in their canonical order (URL then Thumbnail)
+  trailing.sort((a, b) => TRAILING_COLUMNS.indexOf(a) - TRAILING_COLUMNS.indexOf(b));
+  return [...filled, ...empty, ...trailing];
 }
 
 // ── Analysis (works on basic-scrape data: views + dates) ──────────────────

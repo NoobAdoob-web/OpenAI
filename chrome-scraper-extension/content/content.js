@@ -20,6 +20,12 @@
   let popupOpen = false;    // true only while the extension popup is open
   let _scriptBlobCache = null; // cached page <script> text (used during bootstrap detect → TDZ-safe here)
 
+  // Per-post metadata harvested from the page's OWN api/graphql responses by
+  // content/net_hook.js (MAIN world). Keyed by shortcode / post id. This is how
+  // we get the post copy (caption) on a reels/posts GRID, where the caption is
+  // never rendered into the tile. Declared here to stay TDZ-safe.
+  const POST_META = new Map();
+
   // Module constants — MUST be declared before bootstrap (which calls detect →
   // buildCandidates → extractSocialRows). A `const` used before its declaration
   // line executes throws a temporal-dead-zone ReferenceError, so they live here.
@@ -51,9 +57,71 @@
   // why pages WITH detectable data wrongly showed "No data detected".)
   registerMessageListener();
   registerPopupConnection();
+  try { registerNetHookListener(); } catch (e) { console.warn('IDS net hook listener failed', e); }
   try { createOverlays(); } catch (e) { console.warn('IDS createOverlays failed', e); }
   try { checkPendingCrawl(); } catch (e) { console.warn('IDS checkPendingCrawl failed', e); }
   try { detect(); } catch (e) { console.warn('IDS initial detect failed', e); }
+
+  // ─── Post metadata from the page's own API responses ─────────────────────
+  // content/net_hook.js runs in the page's MAIN world and forwards per-post
+  // fields it sees in the site's own JSON responses. We merge them into
+  // POST_META, preferring the first non-empty value we ever saw for a field.
+  function registerNetHookListener() {
+    window.addEventListener('message', (e) => {
+      if (e.source !== window) return;
+      const d = e.data;
+      if (!d || d.__scrapesuite !== 'net' || !Array.isArray(d.items)) return;
+      for (const it of d.items) {
+        if (!it || !it.code) continue;
+        const prev = POST_META.get(it.code) || {};
+        const merged = { ...prev };
+        for (const k of ['caption', 'taken', 'duration', 'views', 'likes', 'comments']) {
+          const v = it[k];
+          const empty = v === '' || v === 0 || v === null || v === undefined;
+          const prevEmpty = merged[k] === '' || merged[k] === 0 || merged[k] === undefined;
+          if (!empty && prevEmpty) merged[k] = v;
+        }
+        POST_META.set(it.code, merged);
+      }
+    }, false);
+    pingNetHook();
+  }
+
+  // Ask the MAIN-world hook to replay everything it captured before we loaded.
+  function pingNetHook() {
+    try { window.postMessage({ __scrapesuite: 'ready' }, '*'); } catch (_) {}
+  }
+
+  // Unix seconds → YYYY-MM-DD
+  function tsToDate(ts) {
+    const n = Number(ts);
+    if (!n || !isFinite(n)) return '';
+    const ms = n > 1e12 ? n : n * 1000;
+    try { return new Date(ms).toISOString().slice(0, 10); } catch (_) { return ''; }
+  }
+
+  // Fill Caption / Date / Duration / counts on a row from POST_META.
+  // Only fills fields the grid did not already provide.
+  function applyPostMeta(row, key) {
+    if (!key) return;
+    const m = POST_META.get(key);
+    if (!m) return;
+    if (!row.Caption && m.caption) {
+      row.Caption = String(m.caption).replace(/\s+/g, ' ').trim().slice(0, 2000);
+    }
+    if (!row.Date && m.taken) row.Date = tsToDate(m.taken);
+    if (!row.Duration && m.duration) {
+      row.Duration = secToClock(m.duration);
+      row['Duration (sec)'] = String(Math.round(m.duration));
+    }
+    // Counts from the API are EXACT (85700), where the grid only shows a
+    // rounded "85.7K". Keep the grid text for display, but let the exact value
+    // drive the numeric column used for analysis.
+    const exact = (v) => v !== '' && v != null;
+    if (exact(m.views))    { if (!row.Views) row.Views = String(m.views);       row['Views (number)']    = String(m.views); }
+    if (exact(m.likes))    { if (!row.Likes) row.Likes = String(m.likes);       row['Likes (number)']    = String(m.likes); }
+    if (exact(m.comments)) { if (!row.Comments) row.Comments = String(m.comments); row['Comments (number)'] = String(m.comments); }
+  }
 
   // ─── Detection ───────────────────────────────────────────────────────────
   function detect() {
@@ -574,12 +642,14 @@
       return true;
     });
 
-    // Fill numeric columns from the raw display columns (322K → 322000)
+    // Fill numeric columns from the raw display columns (322K → 322000).
+    // An exact count already taken from the site's own API (e.g. 85700 rather
+    // than the grid's rounded "85.7K") is kept as-is.
     rows.forEach(r => {
-      r['Views (number)']    = parseCountToNumber(r.Views);
-      r['Likes (number)']    = parseCountToNumber(r.Likes);
-      r['Comments (number)'] = parseCountToNumber(r.Comments);
-      r['Shares (number)']   = parseCountToNumber(r.Shares);
+      r['Views (number)']    = r['Views (number)']    || parseCountToNumber(r.Views);
+      r['Likes (number)']    = r['Likes (number)']    || parseCountToNumber(r.Likes);
+      r['Comments (number)'] = r['Comments (number)'] || parseCountToNumber(r.Comments);
+      r['Shares (number)']   = r['Shares (number)']   || parseCountToNumber(r.Shares);
     });
 
     return { headers: SOCIAL_COLUMNS.slice(), rows, container };
@@ -832,9 +902,14 @@
       if (dm) row.Date = dm[1];
       const cm = href.match(/\/(?:reel|p|tv)\/([^/?]+)/);
       if (cm) {
+        // Post copy / date / duration captured from Instagram's own API
+        // responses (the grid tile itself carries none of this).
+        applyPostMeta(row, cm[1]);
         if (!row.Date) row.Date = findTimestampNear(blob, cm[1]);
-        const dsec = findDurationNear(blob, cm[1]);
-        if (dsec) { row.Duration = secToClock(dsec); row['Duration (sec)'] = String(Math.round(dsec)); }
+        if (!row.Duration) {
+          const dsec = findDurationNear(blob, cm[1]);
+          if (dsec) { row.Duration = secToClock(dsec); row['Duration (sec)'] = String(Math.round(dsec)); }
+        }
       }
 
       const counts = grabCounts(card, isReels ? 'views' : null);
@@ -893,9 +968,13 @@
       // Upload date + duration from embedded JSON, matched by the reel/video id
       const idm = href.match(/\/(?:reel|videos)\/(\d+)/) || href.match(/[?&]v=(\d+)/);
       if (idm) {
-        row.Date = findTimestampNear(blob, idm[1]) || row.Date;
-        const dsec = findDurationNear(blob, idm[1]);
-        if (dsec) { row.Duration = secToClock(dsec); row['Duration (sec)'] = String(Math.round(dsec)); }
+        // Post copy / date / duration from Facebook's own API responses
+        applyPostMeta(row, idm[1]);
+        row.Date = row.Date || findTimestampNear(blob, idm[1]);
+        if (!row.Duration) {
+          const dsec = findDurationNear(blob, idm[1]);
+          if (dsec) { row.Duration = secToClock(dsec); row['Duration (sec)'] = String(Math.round(dsec)); }
+        }
       }
       return row;
     }).filter(Boolean);

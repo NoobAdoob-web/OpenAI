@@ -21,16 +21,21 @@ const { chromium } = require('playwright');
   const previewHeaders = await page.evaluate(()=>[...document.querySelectorAll('#preview-table thead th')].map(t=>t.textContent));
   console.log('Preview header order:', previewHeaders.join(' | '));
 
-  // Populated (Views, Date, URL, Thumbnail, Caption) must come before blank (Likes, Comments, Shares, Duration)
+  // Populated data columns (Views, Date, Caption) come before blank ones
+  // (Likes, Comments, Shares, Duration). URL + Thumbnail are reference links and
+  // are always pinned to the FAR RIGHT, after everything else.
   const idx = h => previewHeaders.indexOf(h);
-  const populatedMax = Math.max(idx('Views'), idx('Views (number)'), idx('Date'), idx('URL'), idx('Thumbnail'), idx('Caption'));
+  const populatedMax = Math.max(idx('Views'), idx('Views (number)'), idx('Date'), idx('Caption'));
   const blankMin = Math.min(idx('Likes'), idx('Comments'), idx('Shares'), idx('Duration'), idx('Duration (sec)'), idx('Likes (number)'));
   console.log('Rank first:', previewHeaders[0]==='Rank');
   console.log('Max populated index:', populatedMax, '| Min blank index:', blankMin);
 
   // (Excel Raw Data column order — Views before blank Shares — validated in test_xlsx.js.)
-  const ok = previewHeaders[0]==='Rank' && populatedMax < blankMin && errs.length===0;
+  const lastTwo = previewHeaders.slice(-2);
+  const trailingOk = lastTwo[0]==='URL' && lastTwo[1]==='Thumbnail';
+  console.log('Last two columns:', lastTwo.join(', '));
+  const ok = previewHeaders[0]==='Rank' && populatedMax < blankMin && trailingOk && errs.length===0;
   if(errs.length) console.log('ERRORS:', errs.join(' | '));
-  console.log('\n'+(ok?'✓ PASS — populated columns first, blank columns last':'❌ FAIL'));
+  console.log('\n'+(ok?'✓ PASS — populated first, blanks next, URL+Thumbnail last':'❌ FAIL'));
   await browser.close(); process.exit(ok?0:1);
 })();
