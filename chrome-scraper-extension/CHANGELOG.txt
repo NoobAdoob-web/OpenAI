@@ -6,7 +6,29 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.10.1  (current)
+v2.11.0  (current)
+------------------------------------------------------------------------
+- READS TEXT FROM THE VIDEO, not just the cover image. This was the real
+  cause of the empty/short Image Text on reels: a reel shows different text
+  on different frames, and the cover frame often has no text at all. The
+  extension now fetches the reel video, samples frames across its length,
+  OCRs each one and merges the unique lines.
+  Proven end-to-end in a real Chrome with the extension installed, on a
+  video whose text changes over time - all four different on-screen lines
+  were recovered ("Ultra performance unlocked" / "Powered by Snapdragon" /
+  "Galaxy AI" / "The all new Galaxy Z Fold8") at 95% confidence, de-duped.
+- Reading the video also yields its exact length, so Duration now fills.
+- Video/full-size image URLs are picked up from the page's own API data, so
+  OCR reads the sharpest available pixels instead of a small grid thumbnail.
+- "AI" is no longer read as "Al". In most sans fonts capital I and lowercase
+  l are the SAME glyph, so no OCR model can separate them from pixels; the
+  standalone token "Al" is corrected to "AI" (narrow on purpose - words like
+  "All", "Already", "Alto" are left alone).
+- New media host permissions (cdninstagram / fbcdn / googlevideo / ggpht)
+  are required to fetch the video for on-device frame reading.
+
+------------------------------------------------------------------------
+v2.10.1
 ------------------------------------------------------------------------
 - FIX: "Could not decode image: 'icon.svg'" on the Chrome Web Store, which
   left the listing spinning and blocked Add to Chrome. Chrome extensions do

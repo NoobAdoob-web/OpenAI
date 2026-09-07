@@ -116,27 +116,106 @@ async function recognize(dict, cr, cw, ch) {
   return decodeCTC(dict, idx, prob);
 }
 
-async function runOcr(dataUrl) {
-  const dict = await loadDict();
-  const { data, width, height } = await toRGBA(dataUrl);
+// In most sans-serif fonts capital "I" and lowercase "l" are the SAME glyph, so
+// no OCR model can tell them apart from pixels alone — "AI" reliably comes back
+// as "Al". Correct only that one standalone token, which in marketing copy is
+// overwhelmingly "AI"; anything broader (e.g. touching "All") would do harm.
+function fixGlyphConfusions(s) {
+  return s.replace(/(^|[^A-Za-z])Al(?![A-Za-z])/g, (m, pre) => pre + 'AI');
+}
+
+// Core: detect + recognise every text line in one RGBA frame.
+async function ocrFrame(dict, data, width, height) {
   let lines = await detLines(data, width, height);
   lines.sort((a, b) => a.cy - b.cy);
   const out = [], confs = [];
   for (const L of lines) {
     if (L.w < 4 || L.h < 4) continue;
     const r = await recognize(dict, cropRGBA(data, width, height, L), L.w, L.h);
-    const t = (r.text || '').replace(/\s+/g, ' ').trim();
+    const t = fixGlyphConfusions((r.text || '').replace(/\s+/g, ' ').trim());
     if (t && r.mean >= 0.45) { out.push(t); confs.push(r.mean); }
   }
-  const text = out.join('\n').trim();
+  return { lines: out, confs };
+}
+
+async function runOcr(dataUrl) {
+  const dict = await loadDict();
+  const { data, width, height } = await toRGBA(dataUrl);
+  const { lines, confs } = await ocrFrame(dict, data, width, height);
+  const text = lines.join('\n').trim();
   const conf = confs.length ? Math.round(100 * confs.reduce((a, b) => a + b, 0) / confs.length) : 0;
   return { text, conf };
+}
+
+// ── Video frame OCR ────────────────────────────────────────────────────────
+// Reels carry most of their text INSIDE the video, not on the cover image, so
+// reading only the cover misses it. We fetch the video, load it from a blob URL
+// (same-origin, so the canvas is NOT tainted and pixels stay readable), sample
+// frames across its length, OCR each, and merge the unique lines.
+function seekTo(v, t) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; v.removeEventListener('seeked', finish); resolve(); } };
+    v.addEventListener('seeked', finish);
+    setTimeout(finish, 3000);            // never hang on a stubborn seek
+    try { v.currentTime = t; } catch (_) { finish(); }
+  });
+}
+// Normalised key so the same on-screen line held across frames counts once.
+function dedupeKey(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+async function runOcrVideo(url, maxFrames) {
+  const dict = await loadDict();
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('video HTTP ' + resp.status);
+  const blob = await resp.blob();
+  const objUrl = URL.createObjectURL(blob);
+  const v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = objUrl;
+  try {
+    await new Promise((res, rej) => {
+      v.onloadedmetadata = () => res();
+      v.onerror = () => rej(new Error('video decode failed'));
+      setTimeout(() => rej(new Error('video load timeout')), 20000);
+    });
+    const duration = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+    const n = Math.max(2, Math.min(maxFrames || 8, 16));
+    const canvas = document.createElement('canvas');
+    const seen = new Set(); const out = []; const confs = [];
+    for (let i = 0; i < n; i++) {
+      const t = duration ? duration * (i + 0.5) / n : 0;
+      await seekTo(v, t);
+      const w = v.videoWidth, h = v.videoHeight;
+      if (!w || !h) continue;
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(v, 0, 0, w, h);
+      let id;
+      try { id = ctx.getImageData(0, 0, w, h); } catch (e) { throw new Error('frame read blocked: ' + e.name); }
+      const r = await ocrFrame(dict, id.data, w, h);
+      for (let k = 0; k < r.lines.length; k++) {
+        const line = r.lines[k], key = dedupeKey(line);
+        if (!key || seen.has(key)) continue;
+        seen.add(key); out.push(line); confs.push(r.confs[k]);
+      }
+    }
+    const conf = confs.length ? Math.round(100 * confs.reduce((a, b) => a + b, 0) / confs.length) : 0;
+    return { text: out.join('\n').trim(), conf, frames: n, duration };
+  } finally {
+    try { URL.revokeObjectURL(objUrl); } catch (_) {}
+  }
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.target !== 'offscreen') return;
   if (msg.action === 'ocr') {
     runOcr(msg.dataUrl).then(r => sendResponse({ ok: true, text: r.text, conf: r.conf })).catch(e => sendResponse({ ok: false, error: String(e).slice(0, 180) }));
+    return true;
+  }
+  if (msg.action === 'ocrVideo') {
+    runOcrVideo(msg.url, msg.maxFrames)
+      .then(r => sendResponse({ ok: true, text: r.text, conf: r.conf, frames: r.frames, duration: r.duration }))
+      .catch(e => sendResponse({ ok: false, error: String(e).slice(0, 180) }));
     return true;
   }
   if (msg.action === 'ocrDispose') { detSess = recSess = null; sendResponse({ ok: true }); return true; }

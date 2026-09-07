@@ -31,7 +31,7 @@
       if (!it || !it.code) continue;
       var prev = BUFFER[it.code];
       if (!prev) { BUFFER[it.code] = it; continue; }
-      var keys = ['caption', 'taken', 'duration', 'views', 'likes', 'comments'];
+      var keys = ['caption', 'taken', 'duration', 'views', 'likes', 'comments', 'video', 'image'];
       for (var k = 0; k < keys.length; k++) {
         var key = keys[k], v = it[key];
         var empty = (v === '' || v === 0 || v === null || v === undefined);
@@ -68,6 +68,18 @@
     return '';
   }
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : null; }
+  // Instagram serves several renditions; take the widest one so OCR gets the
+  // sharpest pixels instead of a small grid thumbnail.
+  function bestUrl(list) {
+    if (!Array.isArray(list) || !list.length) return '';
+    var best = null;
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      if (!c || typeof c.url !== 'string') continue;
+      if (!best || (c.width || 0) > (best.width || 0)) best = c;
+    }
+    return best ? best.url : '';
+  }
   function pick() {
     for (var i = 0; i < arguments.length; i++) { var v = num(arguments[i]); if (v !== null) return v; }
     return null;
@@ -98,7 +110,10 @@
       var comments = pick(obj.comment_count,
                           obj.edge_media_to_comment && obj.edge_media_to_comment.count,
                           obj.edge_media_to_parent_comment && obj.edge_media_to_parent_comment.count);
-      if (caption || taken || dur || views !== null || likes !== null || comments !== null) {
+      var video = bestUrl(obj.video_versions) || (typeof obj.video_url === 'string' ? obj.video_url : '');
+      var image = bestUrl(obj.image_versions2 && obj.image_versions2.candidates)
+               || (typeof obj.display_url === 'string' ? obj.display_url : '');
+      if (caption || taken || dur || views !== null || likes !== null || comments !== null || video || image) {
         out.push({
           code: (typeof code === 'string' && code) ? code : String(id),
           caption: caption || '',
@@ -106,7 +121,9 @@
           duration: dur || 0,
           views: views === null ? '' : views,
           likes: likes === null ? '' : likes,
-          comments: comments === null ? '' : comments
+          comments: comments === null ? '' : comments,
+          video: video || '',
+          image: image || ''
         });
       }
     }

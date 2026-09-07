@@ -75,7 +75,7 @@
         if (!it || !it.code) continue;
         const prev = POST_META.get(it.code) || {};
         const merged = { ...prev };
-        for (const k of ['caption', 'taken', 'duration', 'views', 'likes', 'comments']) {
+        for (const k of ['caption', 'taken', 'duration', 'views', 'likes', 'comments', 'video', 'image']) {
           const v = it[k];
           const empty = v === '' || v === 0 || v === null || v === undefined;
           const prevEmpty = merged[k] === '' || merged[k] === 0 || merged[k] === undefined;
@@ -110,6 +110,10 @@
       row.Caption = String(m.caption).replace(/\s+/g, ' ').trim().slice(0, 2000);
     }
     if (!row.Date && m.taken) row.Date = tsToDate(m.taken);
+    // Media URLs for OCR. Underscore-prefixed so they never reach the export,
+    // which is driven by the header list.
+    if (m.video) row._video = m.video;
+    if (m.image) row._image = m.image;
     if (!row.Duration && m.duration) {
       row.Duration = secToClock(m.duration);
       row['Duration (sec)'] = String(Math.round(m.duration));

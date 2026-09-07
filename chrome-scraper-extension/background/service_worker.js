@@ -180,7 +180,14 @@ function extractAmazonReviewsPage() {
 //  the language. Heavy work runs in an offscreen document because the MV3
 //  service worker can't provide a DOM/canvas + WASM runtime.
 // ══════════════════════════════════════════════════════════════════════════
-const OCR = { active: false };
+const OCR = { active: false, frames: 8 };
+
+function secToClockSW(sec) {
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
+           : `${m}:${String(r).padStart(2, '0')}`;
+}
 
 async function ensureOffscreen() {
   try {
@@ -275,18 +282,28 @@ async function startOcr(msg) {
   let done = 0;
   for (const it of items) {
     if (!OCR.active) break;
-    let text = '', conf = 0, err = '';
+    let text = '', conf = 0, err = '', durationSec = 0;
     try {
-      // Prefer the FULL-RESOLUTION cover image from the post page (much better
-      // OCR than the tiny grid thumbnail). Fall back to the thumbnail.
-      let imgUrl = it.thumb;
-      try {
-        const full = await getFullResImage(it.key);
-        if (full) imgUrl = full;
-      } catch (_) {}
-      const dataUrl = await fetchAsDataUrl(imgUrl);
-      const r = await chrome.runtime.sendMessage({ target: 'offscreen', action: 'ocr', dataUrl });
-      if (r && r.ok) { text = r.text; conf = r.conf; } else { err = (r && r.error) || 'ocr failed'; }
+      // A reel keeps most of its text INSIDE the video, not on the cover frame,
+      // so when we know the video URL we sample frames from it. Otherwise fall
+      // back to the best still image we have.
+      if (it.video) {
+        const r = await chrome.runtime.sendMessage({
+          target: 'offscreen', action: 'ocrVideo', url: it.video, maxFrames: OCR.frames || 8,
+        });
+        if (r && r.ok) { text = r.text; conf = r.conf; durationSec = r.duration || 0; }
+        else { err = (r && r.error) || 'video ocr failed'; }
+      }
+      if (!text) {
+        let imgUrl = it.image || it.thumb;
+        try {
+          const full = await getFullResImage(it.key);
+          if (full) imgUrl = full;
+        } catch (_) {}
+        const dataUrl = await fetchAsDataUrl(imgUrl);
+        const r = await chrome.runtime.sendMessage({ target: 'offscreen', action: 'ocr', dataUrl });
+        if (r && r.ok) { text = r.text; conf = r.conf; } else if (!err) { err = (r && r.error) || 'ocr failed'; }
+      }
     } catch (e) {
       err = String(e).slice(0, 120);
     }
@@ -298,6 +315,11 @@ async function startOcr(msg) {
       Language: language,
       _err: err,
     };
+    // Reading the video also tells us its exact length - fill Duration for free.
+    if (durationSec > 0) {
+      fields.Duration = secToClockSW(durationSec);
+      fields['Duration (sec)'] = String(Math.round(durationSec));
+    }
     done++;
     chrome.runtime.sendMessage({ type: 'ocrProgress', done, total: items.length, key: it.key, fields }).catch(() => {});
   }

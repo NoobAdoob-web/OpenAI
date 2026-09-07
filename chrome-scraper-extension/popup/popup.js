@@ -648,7 +648,7 @@ async function onOcrStart() {
   // Build the work list from rows that have a thumbnail image
   const items = exportRows
     .filter(r => r['Thumbnail'] && /^https?:/.test(r['Thumbnail']) && r['URL'])
-    .map(r => ({ key: r['URL'], thumb: r['Thumbnail'] }));
+    .map(r => ({ key: r['URL'], thumb: r['Thumbnail'], video: r._video || '', image: r._image || '' }));
   if (items.length === 0) {
     setOcrStatus('No images found. Scrape a profile with thumbnails first.', 'error');
     return;
