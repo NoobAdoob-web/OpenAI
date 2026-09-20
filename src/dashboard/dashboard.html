@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>My Saved Library</title>
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <div>
+      <h1>My Saved Library</h1>
+      <p class="brand-sub" id="library-summary">Loading…</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <button type="button" id="open-instagram" class="btn btn-ghost">Go scan my saves</button>
+    <button type="button" id="clear-library" class="btn btn-ghost btn-danger">Clear library</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="filters" id="filters">
+    <label class="field">
+      <span class="field-label">Search captions</span>
+      <input type="search" id="f-search" placeholder="e.g. hiring, recipe, pricing">
+    </label>
+
+    <label class="field">
+      <span class="field-label">Collection</span>
+      <select id="f-collection"><option value="">All collections</option></select>
+    </label>
+
+    <label class="field">
+      <span class="field-label">Creator</span>
+      <select id="f-creator"><option value="">All creators</option></select>
+    </label>
+
+    <fieldset class="field">
+      <legend class="field-label">Type</legend>
+      <label class="check"><input type="checkbox" class="f-type" value="image" checked> Photos</label>
+      <label class="check"><input type="checkbox" class="f-type" value="video" checked> Videos &amp; Reels</label>
+      <label class="check"><input type="checkbox" class="f-type" value="carousel" checked> Carousels</label>
+    </fieldset>
+
+    <div class="field">
+      <span class="field-label">Posted between</span>
+      <div class="field-row">
+        <input type="date" id="f-from" aria-label="From date">
+        <input type="date" id="f-to" aria-label="To date">
+      </div>
+    </div>
+
+    <label class="check standalone">
+      <input type="checkbox" id="f-undownloaded"> Only ones I haven't downloaded
+    </label>
+
+    <label class="field">
+      <span class="field-label">Sort by</span>
+      <select id="f-sort">
+        <option value="found-desc">Recently added to library</option>
+        <option value="date-desc">Newest post first</option>
+        <option value="date-asc">Oldest post first</option>
+        <option value="creator">Creator (A–Z)</option>
+      </select>
+    </label>
+
+    <button type="button" id="reset-filters" class="btn btn-ghost btn-block">Reset filters</button>
+  </aside>
+
+  <section class="content">
+    <div class="toolbar">
+      <div class="toolbar-info">
+        <strong id="match-count">0 posts</strong>
+        <span id="selection-info" class="muted">Nothing selected</span>
+      </div>
+      <div class="toolbar-actions">
+        <button type="button" id="select-all" class="btn btn-ghost">Select all matching</button>
+        <button type="button" id="select-none" class="btn btn-ghost">Clear selection</button>
+        <button type="button" id="export-excel" class="btn btn-secondary">Export to Excel</button>
+        <button type="button" id="download" class="btn btn-primary" disabled>Download selected</button>
+      </div>
+    </div>
+
+    <div id="empty" class="empty" hidden>
+      <h2>Your library is empty</h2>
+      <p>Open Instagram, go to your saved posts, and press <strong>Scan this collection</strong> in the panel at the bottom right.</p>
+      <p class="muted">Scanning only reads captions and thumbnails. Nothing is downloaded until you choose posts here.</p>
+      <button type="button" class="btn btn-primary" id="empty-open">Open my Instagram saves</button>
+    </div>
+
+    <div id="no-match" class="empty" hidden>
+      <h2>Nothing matches those filters</h2>
+      <p class="muted">Try clearing the search box or widening the date range.</p>
+    </div>
+
+    <div id="grid" class="grid"></div>
+
+    <div class="more-wrap">
+      <button type="button" id="show-more" class="btn btn-ghost" hidden>Show more</button>
+    </div>
+  </section>
+</main>
+
+<div class="progress" id="progress" hidden>
+  <div class="progress-body">
+    <div class="progress-text">
+      <strong id="progress-label">Downloading…</strong>
+      <span class="muted" id="progress-detail"></span>
+    </div>
+    <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
+  </div>
+  <button type="button" id="cancel-download" class="btn btn-ghost">Stop</button>
+</div>
+
+<script type="module" src="dashboard.js"></script>
+</body>
+</html>

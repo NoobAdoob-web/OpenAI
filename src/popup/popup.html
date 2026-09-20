@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Saved Library</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    width: 260px;
+    margin: 0;
+    padding: 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    background: #fff;
+    color: #16161a;
+  }
+  .head { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+  .mark { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(160deg, #7c48d4, #d63e80); }
+  h1 { margin: 0; font-size: 13.5px; font-weight: 650; }
+  .count { font-size: 30px; font-weight: 700; line-height: 1.1; }
+  .label { color: #6b6b76; font-size: 12px; margin-bottom: 4px; }
+  .meta { color: #6b6b76; font-size: 11.5px; margin-bottom: 14px; }
+  button {
+    display: block; width: 100%; margin-top: 7px; padding: 9px 12px;
+    border-radius: 9px; border: 1px solid rgba(0,0,0,0.08);
+    font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+    background: #f2f2f5; color: #16161a;
+  }
+  button.primary { background: #7c48d4; color: #fff; border-color: transparent; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1c1c21; color: #f1f1f4; }
+    .label, .meta { color: #a0a0ab; }
+    button { background: #2a2a30; color: #f1f1f4; border-color: rgba(255,255,255,0.1); }
+    button.primary { background: #9a6ef0; color: #14101f; }
+  }
+</style>
+</head>
+<body>
+  <div class="head"><span class="mark"></span><h1>Saved Library</h1></div>
+  <div class="count" id="count">—</div>
+  <div class="label">posts in your library</div>
+  <div class="meta" id="meta">&nbsp;</div>
+  <button type="button" class="primary" id="open">Open my library</button>
+  <button type="button" id="scan">Go to my Instagram saves</button>
+  <script src="popup.js"></script>
+</body>
+</html>

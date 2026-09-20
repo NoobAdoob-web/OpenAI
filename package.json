@@ -1,0 +1,10 @@
+{
+  "name": "saved-library-for-instagram",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chrome extension that turns your Instagram saves into a searchable library you can selectively download.",
+  "scripts": {
+    "test": "node tests/normalize.test.mjs && node tests/naming.test.mjs && node tests/worker.test.mjs"
+  }
+}
