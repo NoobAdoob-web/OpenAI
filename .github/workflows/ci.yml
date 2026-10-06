@@ -1,0 +1,32 @@
+name: ChatLens checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  extension:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chatlens/extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: chatlens/extension/package-lock.json
+      - run: npm ci
+      # Type check, lint (incl. the no-send rule), unit tests with 100% coverage
+      # of the poll matcher, build, no-send scan and network scan.
+      - run: npm run check
+      - name: End-to-end smoke test (fake WhatsApp page)
+        run: |
+          npx playwright install --with-deps chromium
+          npm run smoke
+      - run: npm run zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chatlens-extension
+          path: chatlens/extension/.output/*.zip

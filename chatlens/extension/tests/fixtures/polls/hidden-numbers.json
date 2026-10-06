@@ -1,0 +1,105 @@
+{
+ "description": "WhatsApp hides members' numbers (privacy IDs only): shown by visible name, no private chat.",
+ "snapshot": {
+  "groupId": "120363000000000001@g.us",
+  "groupName": "Test society group",
+  "reportedMemberCount": 4,
+  "members": [
+   {
+    "id": "919800000001@c.us",
+    "rawIds": [
+     "919800000001@c.us",
+     "7700000001@lid"
+    ],
+    "displayName": "You",
+    "isAdmin": false,
+    "isMe": true,
+    "canOpenPrivateChat": true,
+    "phone": "+919800000001"
+   },
+   {
+    "id": "7700000002@lid",
+    "rawIds": [
+     "7700000002@lid"
+    ],
+    "displayName": "~ Kiran",
+    "isAdmin": false,
+    "isMe": false,
+    "canOpenPrivateChat": false
+   },
+   {
+    "id": "7700000003@lid",
+    "rawIds": [
+     "7700000003@lid"
+    ],
+    "displayName": "~ Sonal",
+    "isAdmin": false,
+    "isMe": false,
+    "canOpenPrivateChat": false
+   },
+   {
+    "id": "7700000004@lid",
+    "rawIds": [
+     "7700000004@lid"
+    ],
+    "displayName": "~ Dev",
+    "isAdmin": false,
+    "isMe": false,
+    "canOpenPrivateChat": false
+   }
+  ],
+  "readAt": 1759100000000
+ },
+ "poll": {
+  "id": "false_120363000000000001@g.us_3EB0POLL_919800000001@c.us",
+  "groupId": "120363000000000001@g.us",
+  "question": "Coming to the meeting on Sunday?",
+  "options": [
+   {
+    "id": "1",
+    "label": "Yes"
+   },
+   {
+    "id": "2",
+    "label": "No"
+   }
+  ],
+  "multipleChoice": false,
+  "createdAt": 1759000000000,
+  "creatorId": "919800000001@c.us",
+  "reportedVoterCount": 2
+ },
+ "votes": [
+  {
+   "voterId": "7700000002@lid",
+   "voterRawIds": [
+    "7700000002@lid"
+   ],
+   "optionIds": [
+    "1"
+   ]
+  },
+  {
+   "voterId": "919800000001@c.us",
+   "voterRawIds": [
+    "7700000001@lid"
+   ],
+   "optionIds": [
+    "1"
+   ]
+  }
+ ],
+ "expect": {
+  "ok": true,
+  "summary": {
+   "members": 4,
+   "voted": 2,
+   "notVoted": 2,
+   "votedLeft": 0
+  },
+  "notVoted": [
+   "~ Dev",
+   "~ Sonal"
+  ]
+ }
+}

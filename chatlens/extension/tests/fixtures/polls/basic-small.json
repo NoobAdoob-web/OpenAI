@@ -1,0 +1,136 @@
+{
+ "description": "Five members, three voted.",
+ "snapshot": {
+  "groupId": "120363000000000001@g.us",
+  "groupName": "Test society group",
+  "reportedMemberCount": 5,
+  "members": [
+   {
+    "id": "919800000001@c.us",
+    "rawIds": [
+     "919800000001@c.us"
+    ],
+    "displayName": "You",
+    "isAdmin": true,
+    "isMe": true,
+    "canOpenPrivateChat": true,
+    "phone": "+919800000001"
+   },
+   {
+    "id": "919800000002@c.us",
+    "rawIds": [
+     "919800000002@c.us"
+    ],
+    "displayName": "Gaurav",
+    "isAdmin": false,
+    "isMe": false,
+    "canOpenPrivateChat": true,
+    "phone": "+919800000002"
+   },
+   {
+    "id": "919800000003@c.us",
+    "rawIds": [
+     "919800000003@c.us"
+    ],
+    "displayName": "Hansika",
+    "isAdmin": false,
+    "isMe": false,
+    "canOpenPrivateChat": true,
+    "phone": "+919800000003"
+   },
+   {
+    "id": "919800000004@c.us",
+    "rawIds": [
+     "919800000004@c.us"
+    ],
+    "displayName": "Priya",
+    "isAdmin": false,
+    "isMe": false,
+    "canOpenPrivateChat": true,
+    "phone": "+919800000004"
+   },
+   {
+    "id": "919800000005@c.us",
+    "rawIds": [
+     "919800000005@c.us"
+    ],
+    "displayName": "Rahul",
+    "isAdmin": false,
+    "isMe": false,
+    "canOpenPrivateChat": true,
+    "phone": "+919800000005"
+   }
+  ],
+  "readAt": 1759100000000
+ },
+ "poll": {
+  "id": "false_120363000000000001@g.us_3EB0POLL_919800000001@c.us",
+  "groupId": "120363000000000001@g.us",
+  "question": "Coming to the meeting on Sunday?",
+  "options": [
+   {
+    "id": "1",
+    "label": "Yes"
+   },
+   {
+    "id": "2",
+    "label": "No"
+   }
+  ],
+  "multipleChoice": false,
+  "createdAt": 1759000000000,
+  "creatorId": "919800000001@c.us",
+  "reportedVoterCount": 3
+ },
+ "votes": [
+  {
+   "voterId": "919800000001@c.us",
+   "voterRawIds": [
+    "919800000001@c.us"
+   ],
+   "optionIds": [
+    "1"
+   ]
+  },
+  {
+   "voterId": "919800000002@c.us",
+   "voterRawIds": [
+    "919800000002@c.us"
+   ],
+   "optionIds": [
+    "2"
+   ]
+  },
+  {
+   "voterId": "919800000003@c.us",
+   "voterRawIds": [
+    "919800000003@c.us"
+   ],
+   "optionIds": [
+    "1"
+   ]
+  }
+ ],
+ "expect": {
+  "ok": true,
+  "summary": {
+   "members": 5,
+   "voted": 3,
+   "notVoted": 2,
+   "votedLeft": 0
+  },
+  "notVoted": [
+   "Priya",
+   "Rahul"
+  ],
+  "votedByOption": {
+   "1": [
+    "Hansika",
+    "You"
+   ],
+   "2": [
+    "Gaurav"
+   ]
+  }
+ }
+}

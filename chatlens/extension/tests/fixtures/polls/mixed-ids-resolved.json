@@ -1,0 +1,91 @@
+{
+ "description": "A vote arrives under the privacy ID of a member listed by phone. Resolved to one person (A2).",
+ "snapshot": {
+  "groupId": "120363000000000001@g.us",
+  "groupName": "Test society group",
+  "reportedMemberCount": 3,
+  "members": [
+   {
+    "id": "919800000001@c.us",
+    "rawIds": [
+     "919800000001@c.us",
+     "7700000001@lid"
+    ],
+    "displayName": "You",
+    "isAdmin": false,
+    "isMe": true,
+    "canOpenPrivateChat": true,
+    "phone": "+919800000001"
+   },
+   {
+    "id": "919800000002@c.us",
+    "rawIds": [
+     "919800000002@c.us",
+     "7700000002@lid"
+    ],
+    "displayName": "Gaurav",
+    "isAdmin": false,
+    "isMe": false,
+    "canOpenPrivateChat": true,
+    "phone": "+919800000002"
+   },
+   {
+    "id": "919800000003@c.us",
+    "rawIds": [
+     "919800000003@c.us",
+     "7700000003@lid"
+    ],
+    "displayName": "Hansika",
+    "isAdmin": false,
+    "isMe": false,
+    "canOpenPrivateChat": true,
+    "phone": "+919800000003"
+   }
+  ],
+  "readAt": 1759100000000
+ },
+ "poll": {
+  "id": "false_120363000000000001@g.us_3EB0POLL_919800000001@c.us",
+  "groupId": "120363000000000001@g.us",
+  "question": "Coming to the meeting on Sunday?",
+  "options": [
+   {
+    "id": "1",
+    "label": "Yes"
+   },
+   {
+    "id": "2",
+    "label": "No"
+   }
+  ],
+  "multipleChoice": false,
+  "createdAt": 1759000000000,
+  "creatorId": "919800000001@c.us",
+  "reportedVoterCount": 1
+ },
+ "votes": [
+  {
+   "voterId": "919800000002@c.us",
+   "voterRawIds": [
+    "919800000002@c.us",
+    "7700000002@lid"
+   ],
+   "optionIds": [
+    "1"
+   ]
+  }
+ ],
+ "expect": {
+  "ok": true,
+  "summary": {
+   "members": 3,
+   "voted": 1,
+   "notVoted": 2,
+   "votedLeft": 0
+  },
+  "notVoted": [
+   "Hansika",
+   "You"
+  ]
+ }
+}
