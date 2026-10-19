@@ -1,42 +1,38 @@
 // THE ONLY CODE THAT TOUCHES WHATSAPP.
-// Public, read-only functions (PID section 12). Nothing here can send a
-// message, press a button, or load older history (rules S1, S10).
+// This build does one thing: the poll check. Every function here only reads.
+// Nothing can send a message, press a button, or load older messages (rules S1, S10).
 
-import { getActiveChat, getGroupSnapshot, listChats } from './chats';
-import { allNotes } from './diagnostics';
-import { measureCoverage, readLocalMessages } from './messages';
-import { getPollVotes, listPolls } from './polls';
-import { getStatus, runSelfTest } from './selftest';
+import { allNotes, note } from './diagnostics';
+import { getGroupState, readPoll } from './poll';
+import { PollCheckDataSchema } from './schemas';
 import { ADAPTER_VERSION } from './version';
-import { collections, loaderKind, moduleNames, whatsappVersion } from './wa';
+import { loaderFound, moduleIds, whatsappVersion } from './wa';
 
-/** Facts about the reading code itself. Never names, numbers or chat content. */
+/** Reads the poll, then checks the shape of everything read (rule A8). */
+async function checkPoll(groupId: string, pollId: string) {
+  const data = await readPoll(groupId, pollId);
+  const parsed = PollCheckDataSchema.safeParse(data);
+  if (!parsed.success) {
+    note('shapeCheckFailed', parsed.error.issues.map((i) => i.path.join('.')).join(', '));
+    throw new Error("WhatsApp Web's data looked different from what we expect, so we stopped rather than show a wrong list. Tap Copy details for Claude and send them.");
+  }
+  return parsed.data;
+}
+
+/** Technical facts about HOW reading worked. Never names, numbers or messages. */
 function getDiagnostics() {
-  const names = moduleNames();
   return {
     adapterVersion: ADAPTER_VERSION,
-    whatsappVersion: whatsappVersion() ?? 'unknown',
-    loader: loaderKind(),
-    moduleCount: names.length,
-    collections: Object.keys(collections() ?? {}).sort(),
-    pollModules: names.filter((n) => /^WAWeb.*Poll/i.test(n)).slice(0, 60),
-    notes: allNotes(),
+    whatsappVersion: whatsappVersion(),
+    loaderFound: loaderFound(),
+    moduleCount: moduleIds().length,
+    routes: allNotes(),
   };
 }
 
-export const adapter = {
-  getStatus,
-  getActiveChat,
-  getGroupSnapshot,
-  listPolls,
-  getPollVotes,
-  listChats,
-  readLocalMessages,
-  measureCoverage,
-  runSelfTest,
-  getDiagnostics,
-};
+export const adapter = { getGroupState, checkPoll, getDiagnostics };
 
 export type AdapterApi = typeof adapter;
 export type AdapterFn = keyof AdapterApi;
 export const ADAPTER_FNS = Object.keys(adapter) as AdapterFn[];
+export type { GroupState, PollCheckData, PollSummary, Step } from './poll';

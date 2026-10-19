@@ -1,341 +1,237 @@
-// Phase 0 debug panel: status, health check, poll summary and coverage report.
-// It is deliberately bare. The real screens arrive in Phase 1.
+// The poll check: who has voted and who hasn't. Nothing else.
 
-import { useCallback, useEffect, useState } from 'react';
-import type { PollSummary, PollVotesResult } from '../../adapter/polls';
-import { describeCoverage, type CoverageSourceReport } from '../../core/coverage';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { GroupState, PollCheckData, Step } from '../../adapter';
 import { matchPoll } from '../../core/match';
-import type { ChatInfo, CheckResult, GroupSnapshot, Member, SelfTestResult } from '../../core/types';
+import type { CheckResult, Member } from '../../core/types';
 import { NeedsReload, NotOnWhatsApp, call } from './api';
 
-type PanelStatus = 'checking' | 'ready' | 'open' | 'reload' | 'log-in' | 'paused';
+type Connection = 'checking' | 'connected' | 'not-whatsapp' | 'reload' | 'error';
 
-const STATUS_TEXT: Record<PanelStatus, string> = {
-  checking: 'Checking…',
-  ready: 'Ready',
-  open: 'Open WhatsApp Web',
-  reload: 'Reload WhatsApp Web',
-  'log-in': 'Log in to WhatsApp Web',
-  paused: 'Paused for update',
+const CONNECTION_STEP: Record<Exclude<Connection, 'connected'>, Step> = {
+  checking: { label: 'Connecting to WhatsApp Web', ok: false, detail: 'One moment…' },
+  'not-whatsapp': { label: 'Connected to WhatsApp Web', ok: false, detail: 'Open web.whatsapp.com in this tab.' },
+  reload: { label: 'Connected to WhatsApp Web', ok: false, detail: 'Reload the WhatsApp Web tab once (needed right after installing or updating).' },
+  error: { label: 'Connected to WhatsApp Web', ok: false, detail: 'Something went wrong. Reload the WhatsApp Web tab, then tap Refresh.' },
 };
 
-function time(ms: number): string {
-  return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-}
-
-function statusFromError(e: unknown): PanelStatus {
-  if (e instanceof NotOnWhatsApp) return 'open';
-  if (e instanceof NeedsReload) return 'reload';
-  return 'paused';
-}
+type Result =
+  | { kind: 'none' }
+  | { kind: 'checking' }
+  | { kind: 'error'; message: string }
+  | { kind: 'done'; check: CheckResult; data: PollCheckData; at: number };
 
 export default function App() {
-  const [status, setStatus] = useState<PanelStatus>('checking');
-  const [selfTest, setSelfTest] = useState<SelfTestResult | null>(null);
-  const [chat, setChat] = useState<ChatInfo | null>(null);
-  const [coverage, setCoverage] = useState<CoverageResult | null>(null);
+  const [conn, setConn] = useState<Connection>('checking');
+  const [state, setState] = useState<GroupState | null>(null);
+  const [pollId, setPollId] = useState('');
+  const [result, setResult] = useState<Result>({ kind: 'none' });
+  const groupRef = useRef<string | undefined>(undefined);
 
-  const refreshStatus = useCallback(async (withSelfTest: boolean) => {
+  const refresh = useCallback(async () => {
     try {
-      const s = await call('getStatus');
-      setChat(s === 'ready' ? await call('getActiveChat') : null);
-      if (s !== 'ready') {
-        setStatus(s);
-        return;
+      const s = await call('getGroupState');
+      setConn('connected');
+      setState(s);
+      // A different group was opened: clear the old result.
+      if (s.group?.id !== groupRef.current) {
+        groupRef.current = s.group?.id;
+        setResult({ kind: 'none' });
       }
-      if (withSelfTest) {
-        const t = await call('runSelfTest');
-        setSelfTest(t);
-        setStatus(t.ok ? 'ready' : 'paused');
-      } else {
-        setStatus((prev) => (prev === 'paused' ? 'paused' : 'ready'));
-      }
+      setPollId((cur) => (s.polls.some((p) => p.id === cur) ? cur : (s.polls[0]?.id ?? '')));
     } catch (e) {
-      setStatus(statusFromError(e));
-      setChat(null);
+      setConn(e instanceof NotOnWhatsApp ? 'not-whatsapp' : e instanceof NeedsReload ? 'reload' : 'error');
+      setState(null);
     }
   }, []);
 
   useEffect(() => {
-    void refreshStatus(true);
-    // Rule F1: status follows log in, log out and chat switches within 2 seconds.
-    const t = setInterval(() => void refreshStatus(false), 2000);
+    void refresh();
+    const t = setInterval(() => void refresh(), 2500);
     return () => clearInterval(t);
-  }, [refreshStatus]);
+  }, [refresh]);
 
-  // Re-run the self-test whenever the user opens a different chat.
-  const chatId = chat?.id;
-  useEffect(() => {
-    if (chatId) void refreshStatus(true);
-  }, [chatId, refreshStatus]);
+  const check = async () => {
+    if (!state?.group || !pollId) return;
+    setResult({ kind: 'checking' });
+    try {
+      const data = await call('checkPoll', state.group.id, pollId);
+      setResult({ kind: 'done', check: matchPoll(data.snapshot, data.poll, data.votes), data, at: Date.now() });
+    } catch (e) {
+      setResult({ kind: 'error', message: e instanceof Error && e.message ? e.message : 'Something went wrong. Tap Check votes again.' });
+    }
+  };
+
+  const steps: Step[] =
+    conn === 'connected' ? [{ label: 'Connected to WhatsApp Web', ok: true }, ...(state?.steps ?? [])] : [CONNECTION_STEP[conn]];
+  const ready = conn === 'connected' && !!state?.group && state.polls.length > 0;
 
   return (
     <main>
       <header>
-        <div>
-          <h1>ChatLens</h1>
-          <p className="muted">Phase 0 test build · reads only, never sends</p>
-        </div>
-        <span className={`pill pill-${status}`}>{STATUS_TEXT[status]}</span>
+        <h1>Poll Checker</h1>
+        <p className="muted">See who has voted and who hasn't. Reads only, never sends anything.</p>
       </header>
 
-      {status === 'open' && <p>Open <b>web.whatsapp.com</b> in this tab, then come back here.</p>}
-      {status === 'reload' && <p>Reload the WhatsApp Web tab once (the extension was just installed or updated).</p>}
-      {status === 'log-in' && <p>Log in to WhatsApp Web with your test number.</p>}
+      <section>
+        <div className="row">
+          <h2>Status</h2>
+          <button onClick={() => void refresh()}>Refresh</button>
+        </div>
+        <ul className="steps">
+          {steps.map((s) => (
+            <li key={s.label} className={s.ok ? 'ok' : 'bad'}>
+              <span className="mark">{s.ok ? '✓' : '✗'}</span>
+              <span>
+                {s.label}
+                {s.detail && <span className={s.ok ? 'muted' : 'hint'}>{s.ok ? ` · ${s.detail}` : s.detail}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
 
-      <HealthCheck result={selfTest} onRefresh={() => void refreshStatus(true)} />
-      {status === 'ready' && <PollCheck chat={chat} />}
-      {(status === 'ready' || status === 'paused') && <Coverage report={coverage} onReport={setCoverage} />}
-      {(status === 'ready' || status === 'paused') && <Diagnostics selfTest={selfTest} coverage={coverage} />}
+      {ready && (
+        <section>
+          <h2>{state.group!.name}</h2>
+          <label className="field">
+            Poll
+            <select value={pollId} onChange={(e) => { setPollId(e.target.value); setResult({ kind: 'none' }); }}>
+              {state.polls.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.question || '(poll without a question)'} · {new Date(p.createdAt).toLocaleDateString()}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary big" onClick={() => void check()} disabled={result.kind === 'checking'}>
+            {result.kind === 'checking' ? 'Checking…' : 'Check votes'}
+          </button>
+          <ResultView result={result} />
+        </section>
+      )}
 
+      <Details steps={steps} result={result} />
       <footer className="muted">Not affiliated with, endorsed by or sponsored by WhatsApp or Meta.</footer>
     </main>
   );
 }
 
-function HealthCheck({ result, onRefresh }: { result: SelfTestResult | null; onRefresh: () => void }) {
-  return (
-    <section>
-      <div className="row">
-        <h2>Health check</h2>
-        <button onClick={onRefresh}>Refresh</button>
-      </div>
-      {!result && <p className="muted">Not run yet.</p>}
-      {result && (
-        <ul className="checks">
-          {result.checks.map((c) => (
-            <li key={c.name} className={c.ok ? 'ok' : 'bad'}>
-              <span>{c.ok ? '✓' : '✗'}</span> {c.name}
-              {c.note && <span className="muted"> · {c.note}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-type PollState =
-  | { kind: 'idle' }
-  | { kind: 'loading' }
-  | { kind: 'error'; message: string }
-  | { kind: 'done'; result: CheckResult; votes: PollVotesResult; snapshot: GroupSnapshot; at: number };
-
-function PollCheck({ chat }: { chat: ChatInfo | null }) {
-  const [polls, setPolls] = useState<PollSummary[]>([]);
-  const [pollId, setPollId] = useState('');
-  const [state, setState] = useState<PollState>({ kind: 'idle' });
+function ResultView({ result }: { result: Result }) {
   const [tab, setTab] = useState<'not' | 'voted' | 'left'>('not');
-  const [hideMe, setHideMe] = useState(false);
-  const [hideAdmins, setHideAdmins] = useState(false);
+  const [copied, setCopied] = useState(false);
+  if (result.kind === 'none' || result.kind === 'checking') return null;
+  if (result.kind === 'error') return <p className="error">{result.message}</p>;
 
-  const isGroup = !!chat && chat.type !== 'individual';
-  // The status check hands us a fresh chat object every 2 seconds, so depend on
-  // the chat's ID: results must only clear when the user switches chats.
-  const chatId = isGroup ? chat.id : undefined;
+  const { check, data, at } = result;
+  if (!check.ok) {
+    return (
+      <div className="error">
+        <p>{check.userMessage}</p>
+        <p className="muted">({check.detail})</p>
+      </div>
+    );
+  }
 
-  const loadPolls = useCallback(async () => {
-    if (!chatId) return;
-    try {
-      const list = await call('listPolls', chatId);
-      setPolls(list);
-      setPollId((cur) => (list.some((p) => p.id === cur) ? cur : (list[0]?.id ?? '')));
-    } catch {
-      setPolls([]);
-    }
-  }, [chatId]);
+  // A-Z by name; "~ " (people not in your contacts) doesn't change the order.
+  const sortKey = (n: string) => n.replace(/^~\s*/, '');
+  const byName = (a: { displayName: string }, b: { displayName: string }) => sortKey(a.displayName).localeCompare(sortKey(b.displayName));
+  const optionsOf = new Map<string, string[]>();
+  for (const o of data.poll.options) {
+    for (const m of check.votedByOption[o.id] ?? []) optionsOf.set(m.id, [...(optionsOf.get(m.id) ?? []), o.label]);
+  }
+  const voted: Member[] = data.snapshot.members.filter((m) => optionsOf.has(m.id)).sort(byName);
+  const notVoted = [...check.notVoted].sort(byName);
 
-  useEffect(() => {
-    setState({ kind: 'idle' });
-    void loadPolls();
-  }, [loadPolls]);
-
-  const check = async () => {
-    if (!chat || !pollId) return;
-    setState({ kind: 'loading' });
-    try {
-      // Rule A5: always read fresh.
-      const test = await call('runSelfTest');
-      if (!test.ok) throw new Error('The health check failed, so we paused. See the health check above.');
-      const snapshot = await call('getGroupSnapshot', chat.id);
-      const votes = await call('getPollVotes', pollId);
-      setState({ kind: 'done', result: matchPoll(snapshot, votes.poll, votes.votes), votes, snapshot, at: Date.now() });
-    } catch (e) {
-      const message =
-        e instanceof Error && e.message ? e.message : 'Something went wrong while reading. Tap Check poll again.';
-      setState({ kind: 'error', message });
-    }
+  const copyNames = async () => {
+    await navigator.clipboard.writeText(notVoted.map((m) => m.displayName).join(', '));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  const visible = (ms: Member[]) => ms.filter((m) => !(hideMe && m.isMe) && !(hideAdmins && m.isAdmin)).sort((a, b) => a.displayName.localeCompare(b.displayName));
-
   return (
-    <section>
-      <div className="row">
-        <h2>Poll Chaser test</h2>
-        <button onClick={() => void loadPolls()} disabled={!isGroup}>
-          Reload polls
+    <div className="result">
+      <p className="big-number">
+        {check.summary.notVoted === 0 ? 'Everyone has voted' : `${check.summary.notVoted} haven't voted`}
+      </p>
+      <p>
+        {check.summary.members} members · {check.summary.voted} voted · {check.summary.notVoted} haven't voted
+        {check.summary.votedLeft > 0 && ` · ${check.summary.votedLeft} voted, then left`}
+      </p>
+      <p className="muted">
+        Checked at {new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.{' '}
+        {data.crossChecked
+          ? 'Votes read from two places in WhatsApp Web, and they agree.'
+          : 'Votes could be read from one place only. Compare with WhatsApp once to be sure.'}
+      </p>
+
+      <div className="tabs">
+        <button className={tab === 'not' ? 'on' : ''} onClick={() => setTab('not')}>
+          Haven't voted ({notVoted.length})
         </button>
+        <button className={tab === 'voted' ? 'on' : ''} onClick={() => setTab('voted')}>
+          Voted ({voted.length})
+        </button>
+        {check.votedLeft.length > 0 && (
+          <button className={tab === 'left' ? 'on' : ''} onClick={() => setTab('left')}>
+            Voted, then left ({check.votedLeft.length})
+          </button>
+        )}
       </div>
-      {!chat && <p className="muted">Open a group in WhatsApp Web.</p>}
-      {chat && !isGroup && <p className="muted">“{chat.name}” is not a group. Open a group with a poll.</p>}
-      {isGroup && chat.isAnnouncementGroup && (
-        <p className="warn">This is a community announcement group. Poll Chaser doesn't support these yet (V1).</p>
-      )}
-      {isGroup && (
+
+      {tab === 'not' && (
         <>
-          <p>
-            Group: <b>{chat.name}</b>
-          </p>
-          {polls.length === 0 ? (
-            <p className="muted">No polls loaded in this chat. Scroll up to your poll, then tap Reload polls.</p>
-          ) : (
-            <div className="row">
-              <select value={pollId} onChange={(e) => setPollId(e.target.value)}>
-                {polls.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.question || '(no question)'} · {p.creatorName} · {new Date(p.createdAt).toLocaleDateString()}
-                  </option>
-                ))}
-              </select>
-              <button className="primary" onClick={() => void check()} disabled={state.kind === 'loading'}>
-                {state.kind === 'loading' ? 'Checking…' : 'Check poll'}
-              </button>
-            </div>
+          {notVoted.length > 0 && (
+            <button className="small-btn" onClick={() => void copyNames()}>
+              {copied ? 'Copied ✓' : 'Copy these names'}
+            </button>
           )}
+          <PeopleList people={notVoted.map((m) => ({ key: m.id, name: m.displayName, sub: m.phone && m.phone !== m.displayName ? m.phone : undefined }))} />
         </>
       )}
-
-      {state.kind === 'error' && <p className="bad">{state.message}</p>}
-      {state.kind === 'done' && !state.result.ok && (
-        <div className="bad">
-          <p>{state.result.userMessage}</p>
-          <p className="muted">Detail: {state.result.reason} · {state.result.detail}</p>
-        </div>
+      {tab === 'voted' && (
+        <PeopleList people={voted.map((m) => ({ key: m.id, name: m.displayName, sub: optionsOf.get(m.id)!.join(', ') }))} />
       )}
-      {state.kind === 'done' && state.result.ok && (
-        <div>
-          <p className="summary">
-            {state.result.summary.members} members · {state.result.summary.voted} voted · {state.result.summary.notVoted} haven't voted
-            {state.result.summary.votedLeft > 0 && ` · ${state.result.summary.votedLeft} voted, then left`}
-          </p>
-          <p className="muted">Checked at {time(state.at)}</p>
-          {!state.votes.independentlyVerified && (
-            <p className="warn">
-              Phase 0 note: the vote total could only be read from one place, so it is not independently verified.
-              Compare these numbers with WhatsApp by hand.
-            </p>
-          )}
-          <div className="tabs">
-            <button className={tab === 'not' ? 'on' : ''} onClick={() => setTab('not')}>
-              Haven't voted ({state.result.notVoted.length})
-            </button>
-            <button className={tab === 'voted' ? 'on' : ''} onClick={() => setTab('voted')}>
-              Voted
-            </button>
-            <button className={tab === 'left' ? 'on' : ''} onClick={() => setTab('left')}>
-              Voted, left ({state.result.votedLeft.length})
-            </button>
-          </div>
-          <div className="row small">
-            <label>
-              <input type="checkbox" checked={hideMe} onChange={(e) => setHideMe(e.target.checked)} /> Hide “You”
-            </label>
-            <label>
-              <input type="checkbox" checked={hideAdmins} onChange={(e) => setHideAdmins(e.target.checked)} /> Hide admins
-            </label>
-          </div>
-          {tab === 'not' && <People list={visible(state.result.notVoted)} />}
-          {tab === 'voted' &&
-            state.votes.poll.options.map((o) => (
-              <div key={o.id}>
-                <h3>
-                  {o.label} ({state.result.ok ? state.result.votedByOption[o.id]?.length : 0})
-                </h3>
-                <People list={state.result.ok ? visible(state.result.votedByOption[o.id] ?? []) : []} />
-              </div>
-            ))}
-          {tab === 'left' && (
-            <ul className="people">
-              {state.result.votedLeft.map((p) => (
-                <li key={p.id}>{p.displayName}</li>
-              ))}
-              {state.result.votedLeft.length === 0 && <li className="muted">Nobody.</li>}
-            </ul>
-          )}
-        </div>
-      )}
-    </section>
+      {tab === 'left' && <PeopleList people={check.votedLeft.map((p) => ({ key: p.id, name: p.displayName }))} />}
+    </div>
   );
 }
 
-function People({ list }: { list: Member[] }) {
-  if (list.length === 0) return <p className="muted">Nobody.</p>;
+function PeopleList({ people }: { people: { key: string; name: string; sub?: string }[] }) {
+  if (people.length === 0) return <p className="muted">Nobody.</p>;
   return (
     <ul className="people">
-      {list.map((m) => (
-        <li key={m.id}>
-          {m.displayName}
-          {m.phone && m.phone !== m.displayName && <span className="muted"> · {m.phone}</span>}
-          {m.isAdmin && <span className="tag">admin</span>}
+      {people.map((p) => (
+        <li key={p.key}>
+          <span>{p.name}</span>
+          {p.sub && <span className="muted">{p.sub}</span>}
         </li>
       ))}
     </ul>
   );
 }
 
-type CoverageResult = { memory: CoverageSourceReport; database: CoverageSourceReport; databaseFields: string[] };
-
-function Coverage({ report, onReport }: { report: CoverageResult | null; onReport: (r: CoverageResult) => void }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  const run = async () => {
-    setBusy(true);
-    setError('');
-    try {
-      onReport(await call('measureCoverage'));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <section>
-      <div className="row">
-        <h2>Search coverage report</h2>
-        <button className="primary" onClick={() => void run()} disabled={busy}>
-          {busy ? 'Measuring…' : 'Measure'}
-        </button>
-      </div>
-      <p className="muted">Counts how much message history this computer holds. Reads counts only; no text is kept.</p>
-      {error && <p className="bad">{error}</p>}
-      {report &&
-        [report.memory, report.database].map((r) => (
-          <ul key={r.source} className="report">
-            {describeCoverage(r).map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        ))}
-    </section>
-  );
-}
-
-function Diagnostics({ selfTest, coverage }: { selfTest: SelfTestResult | null; coverage: CoverageResult | null }) {
-  const [text, setText] = useState('');
+/** Technical details for Claude: which steps worked and which reading routes were used. No names, numbers or messages. */
+function Details({ steps, result }: { steps: Step[]; result: Result }) {
   const [copied, setCopied] = useState(false);
+  const [text, setText] = useState('');
 
-  const build = async () => {
-    const diag = await call('getDiagnostics').catch((e: unknown) => ({ error: String(e) }));
+  const copy = async () => {
+    const diag = await call('getDiagnostics').catch((e: unknown) => ({ unavailable: String(e) }));
     const out = JSON.stringify(
       {
         extensionVersion: browser.runtime.getManifest().version,
+        browser: navigator.userAgent,
+        steps: steps.map((s) => `${s.ok ? 'OK ' : 'FAIL '}${s.label}`),
+        lastResult:
+          result.kind === 'done'
+            ? result.check.ok
+              ? { ok: true, summary: result.check.summary, sources: result.data.sources, crossChecked: result.data.crossChecked }
+              : { ok: false, reason: result.check.reason, detail: result.check.detail, sources: result.data.sources }
+            : result.kind === 'error'
+              ? { error: result.message }
+              : result.kind,
         diagnostics: diag,
-        selfTest,
-        coverage,
       },
       null,
       2,
@@ -346,21 +242,17 @@ function Diagnostics({ selfTest, coverage }: { selfTest: SelfTestResult | null; 
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      /* the text box below still shows it */
+      /* the box below still shows it */
     }
   };
 
   return (
-    <section>
+    <section className="details">
       <div className="row">
-        <h2>Diagnostics</h2>
-        <button onClick={() => void build()}>{copied ? 'Copied ✓' : 'Copy diagnostics'}</button>
+        <span className="muted">Something not right? Send these details to Claude. They hold no names, numbers or messages.</span>
+        <button onClick={() => void copy()}>{copied ? 'Copied ✓' : 'Copy details for Claude'}</button>
       </div>
-      <p className="muted">
-        Technical facts about how the reading worked: versions, which data sources were found, counts. No names, numbers or
-        messages. Paste this back to Claude after testing.
-      </p>
-      {text && <textarea readOnly value={text} rows={10} />}
+      {text && <textarea readOnly value={text} rows={8} />}
     </section>
   );
 }

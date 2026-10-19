@@ -9,12 +9,12 @@ export default defineConfig({
   // own files) a bundler would add, and rule P2 keeps the network check strict.
   vite: () => ({ build: { modulePreload: { polyfill: false } } }),
   manifest: {
-    name: 'ChatLens (Phase 0 test build)',
+    name: 'ChatLens Poll Checker (test build)',
     short_name: 'ChatLens',
     description:
-      'Find messages, find people and see who has not answered a poll in WhatsApp Web. Never sends messages on its own. Not affiliated with WhatsApp or Meta.',
+      'See who has voted and who has not in a WhatsApp Web group poll. Reads only, never sends anything. Not affiliated with WhatsApp or Meta.',
     permissions: ['sidePanel'],
     host_permissions: ['https://web.whatsapp.com/*'],
-    action: { default_title: 'Open ChatLens' },
+    action: { default_title: 'Open Poll Checker' },
   },
 });

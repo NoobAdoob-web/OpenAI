@@ -1,150 +1,137 @@
-// Low-level access to WhatsApp Web's own data (PID section 12, "Reading approach").
-// WhatsApp Web loads its code as named modules (for example "WAWebCollections").
-// We look those modules up and read the data models they hold. Everything here
-// is read-only. This is the file most likely to need fixing after a WhatsApp update.
+// Low-level, read-only access to WhatsApp Web's own code and data.
+//
+// WhatsApp Web (version 2.3000 and later) loads its code as named modules
+// through Meta's module loader (window.require / window.__d). We open modules
+// the same way the open-source WA-JS project does, and we find what we need by
+// what a module CONTAINS, not only by its name, because WhatsApp renames
+// modules between versions. Several routes are tried for each piece of data,
+// and the route that worked is recorded for diagnostics.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type AnyObj = Record<string, any>;
 
-type Loader = { kind: 'meta'; require: (name: string) => any } | { kind: 'none' };
-
-function pageWindow(): AnyObj {
+function page(): AnyObj {
   return globalThis as unknown as AnyObj;
 }
 
-function loader(): Loader {
-  const w = pageWindow();
-  if (typeof w.require === 'function' && typeof w.__d === 'function') {
-    return { kind: 'meta', require: w.require as (name: string) => any };
-  }
-  return { kind: 'none' };
+export function loaderFound(): boolean {
+  const w = page();
+  return typeof w.require === 'function' && typeof w.__d === 'function';
 }
 
-export function loaderKind(): Loader['kind'] {
-  return loader().kind;
-}
+// Modules that change WhatsApp's behaviour when opened (from WA-JS's list):
+// "WAWebMoment-<language>" switches WhatsApp's date language. Never open them.
+const NEVER_OPEN = [/^WAWebMoment-/, /\.react$/, /^WAWebEmojiPanel/, /^WAWebAttachMediaFlow/];
 
-const cache = new Map<string, AnyObj>();
+const cache = new Map<string, AnyObj | null>();
 
-/** Returns a WhatsApp module's exports, or undefined if it isn't there. Never throws. */
-export function getModule(name: string): AnyObj | undefined {
-  const hit = cache.get(name);
-  if (hit) return hit;
-  const l = loader();
-  if (l.kind !== 'meta') return undefined;
-  let mod: AnyObj | undefined;
+/** Opens one WhatsApp module (read-only). Returns null if it isn't there. Never throws. */
+export function openModule(id: string): AnyObj | null {
+  if (cache.has(id)) return cache.get(id)!;
+  if (!loaderFound() || NEVER_OPEN.some((re) => re.test(id))) return null;
+  const w = page();
+  let mod: any = null;
   try {
-    const ns = pageWindow().importNamespace;
-    mod = typeof ns === 'function' ? ns(name) : undefined;
+    // The protected way WhatsApp's own loader expects (same as WA-JS).
+    w.ErrorGuard?.skipGuardGlobal?.(true);
+    mod = typeof w.importNamespace === 'function' ? w.importNamespace(id) : null;
   } catch {
-    mod = undefined;
+    mod = null;
   }
   if (!mod) {
     try {
-      mod = l.require(name);
+      mod = w.require(id);
     } catch {
-      mod = undefined;
+      mod = null;
     }
   }
-  if (mod && typeof mod === 'object') cache.set(name, mod);
-  return mod ?? undefined;
+  const out = mod && typeof mod === 'object' ? (mod as AnyObj) : null;
+  if (out) cache.set(id, out);
+  return out;
 }
 
-/** Names of every module WhatsApp Web has defined (for discovery and diagnostics). */
-export function moduleNames(): string[] {
-  const dbg = getModule('__debug');
-  const map = dbg?.modulesMap;
-  return map && typeof map === 'object' ? Object.keys(map) : [];
+/** Every module name WhatsApp Web has defined so far. */
+export function moduleIds(): string[] {
+  try {
+    const map = page().require('__debug')?.modulesMap;
+    return map && typeof map === 'object' ? Object.keys(map).filter((id) => /^(use)?WA/.test(id)) : [];
+  } catch {
+    return [];
+  }
 }
 
-export function collections(): AnyObj | undefined {
-  return getModule('WAWebCollections');
-}
-
-export function collection(name: string): AnyObj | undefined {
-  const c = collections()?.[name];
-  return c && typeof c === 'object' ? c : undefined;
+/**
+ * Finds a module by what it contains. Only modules whose name matches
+ * `nameFilter` are opened, so we never open WhatsApp's code wholesale.
+ */
+export function findModule(nameFilter: RegExp, test: (m: AnyObj) => boolean, preferred: string[] = []): { id: string; mod: AnyObj } | null {
+  const ids = [...preferred, ...moduleIds().filter((id) => nameFilter.test(id) && !preferred.includes(id))];
+  for (const id of ids) {
+    const mod = openModule(id);
+    if (!mod) continue;
+    try {
+      if (test(mod)) return { id, mod };
+    } catch {
+      /* keep looking */
+    }
+  }
+  return null;
 }
 
 /** All models in a WhatsApp collection, whatever shape the collection has. */
-export function models(coll: AnyObj | undefined): AnyObj[] {
+export function models(coll: any): AnyObj[] {
   if (!coll) return [];
   try {
     if (typeof coll.getModelsArray === 'function') return coll.getModelsArray();
     if (Array.isArray(coll.models)) return coll.models;
     if (Array.isArray(coll._models)) return coll._models;
-    if (Array.isArray(coll)) return coll;
   } catch {
     /* fall through */
   }
   return [];
 }
 
-/** Reads an attribute from a WhatsApp model, whichever way it is stored. */
-export function attr(model: AnyObj | undefined, field: string): any {
-  if (!model) return undefined;
+export function isCollection(v: any): boolean {
+  return !!v && typeof v === 'object' && typeof v.getModelsArray === 'function';
+}
+
+/** Reads a field from a WhatsApp model, whichever way it is stored. */
+export function attr(model: any, field: string): any {
+  if (!model || typeof model !== 'object') return undefined;
   try {
     if (model[field] !== undefined) return model[field];
     if (model.attributes && model.attributes[field] !== undefined) return model.attributes[field];
     if (model[`__x_${field}`] !== undefined) return model[`__x_${field}`];
-    if (typeof model.get === 'function') return model.get(field);
   } catch {
     /* ignore */
   }
   return undefined;
 }
 
-/** WhatsApp IDs are objects with a "_serialized" string; return that string. */
-export function widStr(w: any): string | undefined {
+/** A WhatsApp ID (person, group or message key) as a string. */
+export function idStr(w: any): string | undefined {
   if (!w) return undefined;
   if (typeof w === 'string') return w;
-  if (typeof w._serialized === 'string') return w._serialized;
-  if (typeof w.toString === 'function') {
-    const s = w.toString();
-    if (typeof s === 'string' && s !== '[object Object]') return s;
-  }
-  return undefined;
-}
-
-/** Find a model in a collection by its ID string. */
-export function findById(coll: AnyObj | undefined, id: string): AnyObj | undefined {
-  if (!coll) return undefined;
   try {
-    const direct = typeof coll.get === 'function' ? coll.get(id) : undefined;
-    if (direct) return direct;
+    if (typeof w._serialized === 'string') return w._serialized;
+    const s = typeof w.toString === 'function' ? w.toString() : undefined;
+    if (typeof s === 'string' && s && s !== '[object Object]') return s;
   } catch {
     /* ignore */
   }
-  return models(coll).find((m) => widStr(attr(m, 'id')) === id);
-}
-
-/** The current user's IDs (phone-based and privacy ID), as far as WhatsApp exposes them. */
-export function meIds(): string[] {
-  const mod = getModule('WAWebUserPrefsMeUser');
-  const out: string[] = [];
-  for (const fn of ['getMaybeMeUser', 'getMaybeMePnUser', 'getMaybeMeLidUser']) {
-    try {
-      const id = widStr(typeof mod?.[fn] === 'function' ? mod[fn]() : undefined);
-      if (id) out.push(id);
-    } catch {
-      /* ignore */
-    }
-  }
-  return [...new Set(out)];
-}
-
-/** WhatsApp Web build version, for the Get help message. */
-export function whatsappVersion(): string | undefined {
-  const w = pageWindow();
-  const v = w.Debug?.VERSION ?? getModule('WAWebBuildConstants')?.VERSION_STR;
-  return typeof v === 'string' ? v : undefined;
+  return undefined;
 }
 
 /** Field names (never values) on a model, for diagnostics. */
-export function fieldNames(model: AnyObj | undefined): string[] {
-  if (!model) return [];
-  const names = new Set<string>();
-  for (const k of Object.keys(model.attributes ?? {})) names.add(k);
+export function fieldNames(model: any): string[] {
+  if (!model || typeof model !== 'object') return [];
+  const names = new Set<string>(Object.keys(model.attributes ?? {}));
   for (const k of Object.keys(model)) if (k.startsWith('__x_')) names.add(k.slice(4));
   return [...names].sort();
+}
+
+/** WhatsApp Web build version, for the diagnostics. */
+export function whatsappVersion(): string {
+  const v = page().Debug?.VERSION;
+  return typeof v === 'string' ? v : 'unknown';
 }

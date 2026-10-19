@@ -1,21 +1,11 @@
-// Runtime shape checks for everything the adapter returns (self-test, rule A8).
-// If WhatsApp changes its data, these fail and the extension pauses instead of
-// showing a wrong result.
+// Shape checks for everything the poll reader returns (rule A8). If WhatsApp
+// changes its data, these fail and the user sees an error, never a wrong list.
 
 import { z } from 'zod';
 
 const nonEmpty = z.string().min(1);
 
-export const ChatInfoSchema = z.object({
-  id: nonEmpty,
-  name: z.string(),
-  type: z.enum(['individual', 'group', 'community-group']),
-  communityId: z.string().optional(),
-  isArchived: z.boolean(),
-  isAnnouncementGroup: z.boolean(),
-});
-
-export const MemberSchema = z.object({
+const MemberSchema = z.object({
   id: nonEmpty,
   rawIds: z.array(nonEmpty).min(1),
   displayName: nonEmpty,
@@ -25,52 +15,33 @@ export const MemberSchema = z.object({
   canOpenPrivateChat: z.boolean(),
 });
 
-export const GroupSnapshotSchema = z.object({
-  groupId: nonEmpty,
-  groupName: z.string(),
-  reportedMemberCount: z.number().int().positive(),
-  members: z.array(MemberSchema).min(1),
-  readAt: z.number(),
-});
-
-export const PollSummarySchema = z.object({
-  id: nonEmpty,
-  question: z.string(),
-  creatorName: z.string(),
-  createdAt: z.number(),
-  optionCount: z.number().int().min(1),
-});
-
-export const PollSchema = z.object({
-  id: nonEmpty,
-  groupId: nonEmpty,
-  question: z.string(),
-  options: z.array(z.object({ id: nonEmpty, label: z.string() })).min(1),
-  multipleChoice: z.boolean(),
-  createdAt: z.number(),
-  creatorId: nonEmpty,
-  reportedVoterCount: z.number().int().min(0),
-});
-
-export const VoteSchema = z.object({
-  voterId: nonEmpty,
-  voterRawIds: z.array(nonEmpty).min(1),
-  voterName: z.string().optional(),
-  optionIds: z.array(nonEmpty).min(1),
-  votedAt: z.number().optional(),
-});
-
-export const LocalMessageSchema = z.object({
-  id: nonEmpty,
-  chatId: nonEmpty,
-  chatType: z.enum(['individual', 'group', 'community-group']),
-  communityId: z.string().optional(),
-  senderId: nonEmpty,
-  timestamp: z.number(),
-  text: z.string(),
-  kind: z.enum(['text', 'link', 'document', 'image', 'video', 'audio', 'other']),
-  fileName: z.string().optional(),
-  isEdited: z.boolean(),
-  isDeletedForEveryone: z.literal(false),
-  isViewOnce: z.literal(false),
+export const PollCheckDataSchema = z.object({
+  snapshot: z.object({
+    groupId: nonEmpty,
+    groupName: z.string(),
+    reportedMemberCount: z.number().int().positive(),
+    members: z.array(MemberSchema).min(1),
+    readAt: z.number(),
+  }),
+  poll: z.object({
+    id: nonEmpty,
+    groupId: nonEmpty,
+    question: z.string(),
+    options: z.array(z.object({ id: nonEmpty, label: z.string() })).min(1),
+    multipleChoice: z.boolean(),
+    createdAt: z.number(),
+    creatorId: nonEmpty,
+    reportedVoterCount: z.number().int().min(0),
+  }),
+  votes: z.array(
+    z.object({
+      voterId: z.string(),
+      voterRawIds: z.array(z.string()),
+      voterName: z.string().optional(),
+      optionIds: z.array(nonEmpty).min(1),
+      votedAt: z.number().optional(),
+    }),
+  ),
+  sources: z.object({ whatsapp: z.number().nullable(), database: z.number().nullable() }),
+  crossChecked: z.boolean(),
 });

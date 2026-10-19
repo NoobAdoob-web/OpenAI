@@ -4,7 +4,7 @@ A Chrome extension that adds read-only power-ups to WhatsApp Web: Deep Search,
 People Finder and Poll Chaser. It never sends a message on its own, and nothing
 leaves the user's computer. Not affiliated with WhatsApp or Meta.
 
-- **Current stage:** Phase 0, proving the reading works (see the PID, section 15).
-- **Install the test build:** [`chatlens/docs/README-FOUNDER.md`](chatlens/docs/README-FOUNDER.md)
-- **Download:** [`chatlens/releases/chatlens-phase0-v0.0.1.zip`](chatlens/releases/chatlens-phase0-v0.0.1.zip)
+- **Current stage:** Poll Checker only: see who has voted and who hasn't in a group poll.
+- **Install and test:** [`chatlens/docs/README-FOUNDER.md`](chatlens/docs/README-FOUNDER.md)
+- **Download:** [`chatlens/releases/chatlens-poll-checker-v0.1.0.zip`](chatlens/releases/chatlens-poll-checker-v0.1.0.zip)
 - **Code:** `chatlens/extension/`. Only `extension/adapter/` touches WhatsApp Web.
