@@ -298,7 +298,8 @@ function shapeOf(v: unknown, depth = 2): unknown {
 class UnreadableVote extends Error {}
 
 function toRecord(r: AnyObj): RawVoteRecord & { wid: unknown } {
-  const senderWid = attr(r, 'sender');
+  // Database rows name the voter "sender"; decrypted vote messages name them "author".
+  const senderWid = attr(r, 'sender') ?? attr(r, 'author');
   const sender = idStr(senderWid) ?? '';
   const selected = attr(r, 'selectedOptionLocalIds');
   // An empty list means the person removed their vote. A missing list means we
@@ -331,8 +332,22 @@ function pollModuleMap(): string {
     .join(' ');
 }
 
-/** Route A: WhatsApp Web's own "get votes" function. null = not available. */
+/**
+ * Route A: WhatsApp Web's own vote reader. WhatsApp 2.3000.105x and later keep
+ * votes in an add-on table whose reader ("pollVoteTableMode") returns them
+ * decrypted; older versions had a plain "getVotes" function. null = not available.
+ */
 async function votesFromWhatsApp(pollMsg: AnyObj): Promise<AnyObj[] | null> {
+  const tableMode = findModule(/Poll.*Vote|Vote.*Poll/i, (m) => typeof m.pollVoteTableMode?.bulkGetByParentMsgKey === 'function');
+  if (tableMode) {
+    note('votesFunctionRoute', `${tableMode.id}.pollVoteTableMode`);
+    try {
+      const rows = await tableMode.mod.pollVoteTableMode.bulkGetByParentMsgKey([attr(pollMsg, 'id')]);
+      if (Array.isArray(rows)) return rows;
+    } catch (e) {
+      note('votesTableModeError', e instanceof Error ? e.name : 'error');
+    }
+  }
   const found =
     findModule(/Poll|Vote/i, (m) => typeof m.getVotes === 'function' && (typeof m.upsertVotes === 'function' || typeof m.upsertVotesDb === 'function' || typeof m.getVote === 'function')) ??
     findModule(/Poll|Vote/i, (m) => typeof m.getVotes === 'function');
@@ -391,8 +406,14 @@ export async function readPoll(groupId: string, pollId: string): Promise<PollChe
   note('pollSnapshotShape', JSON.stringify(shapeOf(attr(msg, 'pollVotesSnapshot'), 3)));
 
   // Votes, from every route that works. A route whose votes can't be fully read is dropped, never half-used.
-  const [fromWa, fromDbRaw] = await Promise.all([votesFromWhatsApp(msg), votesFromDatabase(pollId)]);
-  if (fromDbRaw?.[0]) note('voteRowShape', JSON.stringify(shapeOf(fromDbRaw[0])));
+  const [fromWa, fromDbRows] = await Promise.all([votesFromWhatsApp(msg), votesFromDatabase(pollId)]);
+  if (fromDbRows?.[0]) note('voteRowShape', JSON.stringify(shapeOf(fromDbRows[0])));
+  // Newer WhatsApp versions encrypt the chosen options in the database. Its row
+  // converter then returns an empty list, which would read as "vote removed",
+  // so an encrypted table is treated as unreadable, never converted.
+  const dbEncrypted = !!fromDbRows?.some((row) => !Array.isArray(attr(row, 'selectedOptionLocalIds')));
+  if (dbEncrypted) note('databaseVotesUnreadable', 'the chosen options are encrypted');
+  const fromDbRaw = dbEncrypted ? null : fromDbRows;
   const convert = fromDbRaw?.length ? voteConverter() : null;
   let fromDb = fromDbRaw;
   if (fromDbRaw && convert) {
@@ -471,9 +492,14 @@ export async function readPoll(groupId: string, pollId: string): Promise<PollChe
   const other = waVotes && dbVotes ? (shown === waVotes ? dbVotes : waVotes) : shown;
 
   // Rule A3: the member total WhatsApp itself reports ("size"), if it has one.
+  // WhatsApp doesn't update "size" when someone is added while the chat is open
+  // on this computer; those members carry a "joinTime". Count them in only when
+  // that makes the list agree exactly with WhatsApp's total.
   const size = attr(gm, 'size');
   const hasSize = typeof size === 'number' && size > 0;
-  note('memberCountRoute', hasSize ? 'whatsapp-size' : 'participant-list');
+  const joinedSince = participants.filter((p) => Number(attr(p, 'joinTime') ?? 0) > 0).length;
+  const addJoined = hasSize && joinedSince > 0 && participants.length === size + joinedSince;
+  note('memberCountRoute', hasSize ? (addJoined ? `whatsapp-size+joined:${joinedSince}` : 'whatsapp-size') : 'participant-list');
 
   const sender = idStr(attr(msg, 'author')) ?? idStr(attr(attr(msg, 'id'), 'participant'));
   const selectable = Number(attr(msg, 'pollSelectableOptionsCount') ?? 0);
@@ -482,7 +508,7 @@ export async function readPoll(groupId: string, pollId: string): Promise<PollChe
     snapshot: {
       groupId,
       groupName: groupName(chat),
-      reportedMemberCount: hasSize ? size : participants.length,
+      reportedMemberCount: hasSize ? size + (addJoined ? joinedSince : 0) : participants.length,
       members,
       readAt: Date.now(),
     },

@@ -6,5 +6,5 @@ leaves the user's computer. Not affiliated with WhatsApp or Meta.
 
 - **Current stage:** Poll Checker only: see who has voted and who hasn't in a group poll.
 - **Install and test:** [`chatlens/docs/README-FOUNDER.md`](chatlens/docs/README-FOUNDER.md)
-- **Download:** [`chatlens/releases/chatlens-poll-checker-v0.1.1.zip`](chatlens/releases/chatlens-poll-checker-v0.1.1.zip)
+- **Download:** [`chatlens/releases/chatlens-poll-checker-v0.1.2.zip`](chatlens/releases/chatlens-poll-checker-v0.1.2.zip)
 - **Code:** `chatlens/extension/`. Only `extension/adapter/` touches WhatsApp Web.
