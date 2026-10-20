@@ -79,3 +79,8 @@ button.big { width: 100%; padding: 9px; font-size: 15px; font-weight: 600; }
 .details .row button { flex: none; }
 header { display: block; }
 header p { margin-top: 2px; }
+.options ul { list-style: none; padding: 0; margin: 4px 0; }
+.options li { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; padding: 4px 0; }
+.options .label { min-width: 0; overflow-wrap: anywhere; }
+.options .count { font-weight: 700; font-variant-numeric: tabular-nums; }
+.options .bar { grid-column: 1 / -1; height: 4px; margin-top: 3px; border-radius: 2px; background: var(--accent); min-width: 2px; }

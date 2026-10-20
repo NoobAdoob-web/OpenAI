@@ -14,6 +14,9 @@
 // ?variant=mixed    members by phone ID, votes by privacy ID, mapped by WhatsApp's lookup
 // ?variant=dm       a one-to-one chat is open instead of a group
 // ?variant=unreadable  votes exist but their chosen option can't be read: must show an error
+// ?variant=encrypted  WhatsApp 2.3000.105x: chosen options encrypted in the database,
+//                   votes only through WhatsApp's poll-vote table reader (voter in
+//                   "author"), and a member added after WhatsApp's "size" was taken
 (() => {
   const variant = new URLSearchParams(location.search).get('variant') || 'modern';
   const modern = variant !== 'legacy';
@@ -31,11 +34,11 @@
   const P = (n) => `91980000000${n}@c.us`;
   const L = (n) => `7700000${n}@lid`;
   const G = '120363000000000001@g.us';
-  const memberId = variant === 'modern' || variant === 'unreadable' ? L : P; // how the group lists people
+  const memberId = variant === 'modern' || variant === 'unreadable' || variant === 'encrypted' ? L : P; // how the group lists people
   const voterId = variant === 'legacy' ? P : L; // how votes name people
   const now = Math.floor(Date.now() / 1000);
 
-  const names = { 1: 'Aman', 2: 'Gaurav', 3: 'Hansika', 4: 'Priya', 5: 'Rahul', 9: 'Vikram' };
+  const names = { 1: 'Aman', 2: 'Gaurav', 3: 'Hansika', 4: 'Priya', 5: 'Rahul', 7: 'Neha', 9: 'Vikram' };
   const contactOf = (n) => (n === 6 ? { id: wid(memberId(6)), pushname: 'Rahul' } : { id: wid(memberId(n)), name: names[n], formattedName: names[n] });
   const participants = [1, 2, 3, 4, 5, 6].map((n) => ({
     id: wid(memberId(n)),
@@ -44,7 +47,8 @@
     // Legacy WhatsApp: names come from the contact list, not the participant.
     ...(variant === 'legacy' ? {} : { contact: contactOf(n) }),
   }));
-  if (modern) participants.push({ id: wid(memberId(8)), isAdmin: false, stale: true, contact: { id: wid(memberId(8)), name: 'Old Entry' } });
+  if (variant === 'encrypted') participants.push({ id: wid(memberId(7)), isAdmin: false, joinTime: now - 3600, contact: contactOf(7) });
+  else if (modern) participants.push({ id: wid(memberId(8)), isAdmin: false, stale: true, contact: { id: wid(memberId(8)), name: 'Old Entry' } });
   const pastParticipants = [{ id: wid(memberId(9)), isAdmin: false, ...(variant === 'legacy' ? {} : { contact: contactOf(9) }) }];
   const groupMetadata = { id: wid(G), subject: 'Sunday Cricket Club', size: 6, participants: coll(participants), pastParticipants: coll(pastParticipants) };
 
@@ -85,6 +89,16 @@
     WAWebPollsVoteDbUtils: () => ({
       voteFromDbRow: (row) => ({ ...row, sender: wid(row.sender), selectedOptionLocalIds: JSON.parse(row.optionsPacked) }),
     }),
+    WAWebAddonPollVoteTableMode: () => ({
+      pollVoteTableMode: {
+        bulkGetByParentMsgKey: async (keys) =>
+          voteRows
+            .filter((r) => keys.some((k) => String(k) === String(r.parentMsgKey)))
+            .map((r, i) => ({ id: key(false, G, `PV${i}`, String(r.sender)), author: r.sender, pollUpdateParentKey: r.parentMsgKey, selectedOptionLocalIds: r.selectedOptionLocalIds, senderTimestampMs: r.senderTimestampMs })),
+      },
+    }),
+    // Real WhatsApp's converter can't decrypt either: it returns an empty choice.
+    WAWebPollsDbSerialization: () => ({ voteFromDbRow: (row) => ({ ...row, sender: wid(row.sender), selectedOptionLocalIds: [] }) }),
     WAWebApiContact: () => ({
       getPhoneNumber: () => null,
       getPnForLid: (w) => {
@@ -104,6 +118,7 @@
   };
   const available = {
     modern: ['WAWebUserPrefsMeUser', 'WAWebChatCollection', 'WAWebPollsVoteCollection', 'WAWebPollsVoteDbUtils', 'WAWebMoment-es', 'WAWebSomeOtherModule'],
+    encrypted: ['WAWebUserPrefsMeUser', 'WAWebChatCollection', 'WAWebAddonPollVoteTableMode', 'WAWebPollsDbSerialization', 'WAWebSomeOtherModule'],
     unreadable: ['WAWebUserPrefsMeUser', 'WAWebChatCollection', 'WAWebSomeOtherModule'],
     dm: ['WAWebUserPrefsMeUser', 'WAWebChatCollection', 'WAWebPollsVoteCollection', 'WAWebSomeOtherModule'],
     legacy: ['WAWebUserPrefsMeUser', 'WAWebCollections', 'WAWebMoment-es', 'WAWebSomeOtherModule'],
@@ -131,7 +146,8 @@
     const v = open.result.createObjectStore('poll-votes', { autoIncrement: true });
     for (const r of voteRows) {
       const row = { parentMsgKey: String(r.parentMsgKey), sender: String(r.sender), senderTimestampMs: r.senderTimestampMs };
-      if (modern) row.optionsPacked = JSON.stringify(r.selectedOptionLocalIds);
+      if (variant === 'encrypted') row.selectedOptionLocalIds = { _data: {}, iv: {}, _keyId: 1, _scheme: 1 };
+      else if (modern) row.optionsPacked = JSON.stringify(r.selectedOptionLocalIds);
       else row.selectedOptionLocalIds = r.selectedOptionLocalIds;
       v.put(row);
     }

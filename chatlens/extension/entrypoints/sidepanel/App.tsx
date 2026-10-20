@@ -158,6 +158,7 @@ function ResultView({ result }: { result: Result }) {
         {check.summary.members} members · {check.summary.voted} voted · {check.summary.notVoted} haven't voted
         {check.summary.votedLeft > 0 && ` · ${check.summary.votedLeft} voted, then left`}
       </p>
+      <OptionCounts options={data.poll.options} votedByOption={check.votedByOption} voted={check.summary.voted} multipleChoice={data.poll.multipleChoice} />
       <p className="muted">
         Checked at {new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.{' '}
         {data.crossChecked
@@ -193,6 +194,40 @@ function ResultView({ result }: { result: Result }) {
         <PeopleList people={voted.map((m) => ({ key: m.id, name: m.displayName, sub: optionsOf.get(m.id)!.join(', ') }))} />
       )}
       {tab === 'left' && <PeopleList people={check.votedLeft.map((p) => ({ key: p.id, name: p.displayName }))} />}
+    </div>
+  );
+}
+
+/** How many current members picked each option, in the poll's own order. */
+function OptionCounts({
+  options,
+  votedByOption,
+  voted,
+  multipleChoice,
+}: {
+  options: { id: string; label: string }[];
+  votedByOption: Record<string, Member[]>;
+  voted: number;
+  multipleChoice: boolean;
+}) {
+  return (
+    <div className="options">
+      <h3>
+        Votes by option <span className="muted">(out of {voted} who voted)</span>
+      </h3>
+      <ul>
+        {options.map((o) => {
+          const n = votedByOption[o.id]?.length ?? 0;
+          return (
+            <li key={o.id}>
+              <span className="label">{o.label}</span>
+              <span className="count">{n}</span>
+              <span className="bar" style={{ width: `${voted ? (n / voted) * 100 : 0}%` }} />
+            </li>
+          );
+        })}
+      </ul>
+      {multipleChoice && <p className="muted">People could pick more than one option, so these can add up to more than {voted}.</p>}
     </div>
   );
 }

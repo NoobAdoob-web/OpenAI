@@ -83,6 +83,9 @@ async function fullPollCheck({ panel, see, list }, sourcesText) {
   await panel.getByRole('button', { name: 'Check votes' }).click();
   await see("6 members · 4 voted · 2 haven't voted · 1 voted, then left");
   await see(sourcesText);
+  // Votes by option count current members only (Vikram left, so he isn't in "Yes").
+  const optionCounts = flat(await panel.locator('.options li').allInnerTexts());
+  if (JSON.stringify(optionCounts) !== JSON.stringify(['Yes 3', 'No 1'])) throw new Error(`Votes by option: got ${JSON.stringify(optionCounts)}`);
   await expectList(list, ['Priya', '~ Rahul'], "Haven't voted");
   await panel.getByRole('button', { name: 'Voted (4)' }).click();
   await expectList(list, ['Gaurav Yes', 'Hansika No', 'Rahul Yes', 'You Yes'], 'Voted');
@@ -101,6 +104,17 @@ async function fullPollCheck({ panel, see, list }, sourcesText) {
 }
 
 await scenario('modern', (t) => fullPollCheck(t, 'Votes read from two places in WhatsApp Web, and they agree.'));
+await scenario('encrypted', async ({ panel, see, list }) => {
+  await see('Found polls in this chat');
+  await panel.getByRole('button', { name: 'Check votes' }).click();
+  await see("7 members · 4 voted · 3 haven't voted · 1 voted, then left");
+  await see('Votes could be read from one place only.');
+  const optionCounts = flat(await panel.locator('.options li').allInnerTexts());
+  if (JSON.stringify(optionCounts) !== JSON.stringify(['Yes 3', 'No 1'])) throw new Error(`Votes by option: got ${JSON.stringify(optionCounts)}`);
+  await expectList(list, ['Neha', 'Priya', '~ Rahul'], "Haven't voted");
+  await panel.getByRole('button', { name: 'Voted (4)' }).click();
+  await expectList(list, ['Gaurav Yes', 'Hansika No', 'Rahul Yes', 'You Yes'], 'Voted');
+});
 await scenario('legacy', (t) => fullPollCheck(t, 'Votes could be read from one place only.'));
 // No database converter here, so the database route is (correctly) dropped as unreadable.
 await scenario('mixed', (t) => fullPollCheck(t, 'Votes could be read from one place only.'));

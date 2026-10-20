@@ -411,7 +411,8 @@ export async function readPoll(groupId: string, pollId: string): Promise<PollChe
   // Newer WhatsApp versions encrypt the chosen options in the database. Its row
   // converter then returns an empty list, which would read as "vote removed",
   // so an encrypted table is treated as unreadable, never converted.
-  const dbEncrypted = !!fromDbRows?.some((row) => !Array.isArray(attr(row, 'selectedOptionLocalIds')));
+  const isEncrypted = (v: unknown) => !!v && typeof v === 'object' && !Array.isArray(v);
+  const dbEncrypted = !!fromDbRows?.some((row) => isEncrypted(attr(row, 'selectedOptionLocalIds')));
   if (dbEncrypted) note('databaseVotesUnreadable', 'the chosen options are encrypted');
   const fromDbRaw = dbEncrypted ? null : fromDbRows;
   const convert = fromDbRaw?.length ? voteConverter() : null;
