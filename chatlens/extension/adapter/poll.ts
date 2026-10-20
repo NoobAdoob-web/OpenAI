@@ -6,7 +6,7 @@ import type { GroupSnapshot, Member, Poll, Vote } from '../core/types';
 import { currentVotes, type RawVoteRecord } from '../core/votes';
 import { note } from './diagnostics';
 import { iterateStore, storeNames, withWaDb } from './idb';
-import { attr, fieldNames, findModule, idStr, isCollection, loaderFound, models, openModule, type AnyObj } from './wa';
+import { attr, fieldNames, findModule, idStr, isCollection, loaderFound, moduleIdsMatching, models, openModule, type AnyObj } from './wa';
 
 // ---------------------------------------------------------------------------
 // Finding WhatsApp's data
@@ -196,9 +196,17 @@ export interface GroupState {
   polls: PollSummary[];
 }
 
+/**
+ * A poll itself, not a vote. WhatsApp stores every vote as its own message too
+ * ("poll_update", with pollUpdateParentKey pointing at the poll); those must
+ * never be listed as polls.
+ */
 function isPollMsg(m: AnyObj): boolean {
   const type = attr(m, 'type');
-  return (typeof type === 'string' && type.startsWith('poll_creation')) || Array.isArray(attr(m, 'pollOptions'));
+  if (typeof type !== 'string' || !type.startsWith('poll_creation')) return false;
+  if (attr(m, 'pollUpdateParentKey')) return false;
+  const options = attr(m, 'pollOptions');
+  return Array.isArray(options) && options.length > 0;
 }
 
 function pollMessages(chat: AnyObj): AnyObj[] {
@@ -275,22 +283,61 @@ function kindCounts(ids: string[]): string {
 
 // ---- votes ----
 
+/** Describes a value's structure (field names and types, never values) for diagnostics. */
+function shapeOf(v: unknown, depth = 2): unknown {
+  if (Array.isArray(v)) return v.length ? [`${v.length} items`, shapeOf(v[0], depth - 1)] : '[]';
+  if (v && typeof v === 'object') {
+    if (depth <= 0) return 'object';
+    const o: Record<string, unknown> = {};
+    for (const k of Object.keys(v).slice(0, 30)) o[k] = shapeOf((v as AnyObj)[k], depth - 1);
+    return o;
+  }
+  return v === null ? 'null' : typeof v;
+}
+
+class UnreadableVote extends Error {}
+
 function toRecord(r: AnyObj): RawVoteRecord & { wid: unknown } {
   const senderWid = attr(r, 'sender');
   const sender = idStr(senderWid) ?? '';
   const selected = attr(r, 'selectedOptionLocalIds');
+  // An empty list means the person removed their vote. A missing list means we
+  // can't read the vote at all: that must stop the check, never count as "not voted".
+  if (!Array.isArray(selected)) throw new UnreadableVote();
   return {
     sender,
     wid: senderWid,
-    selectedOptionIds: Array.isArray(selected) ? selected.map((x: unknown) => String(x)) : [],
+    selectedOptionIds: selected.map((x: unknown) => String(x)),
     timestampMs: Number(attr(r, 'senderTimestampMs') ?? 0),
   };
 }
 
+/** WhatsApp's own converter from a database row to a vote, if it has one. */
+function voteConverter(): ((row: AnyObj) => AnyObj) | null {
+  const found = findModule(/Poll|Vote/i, (m) => typeof m.voteFromDbRow === 'function');
+  note('voteConverterRoute', found?.id ?? 'not found');
+  return found ? (row) => found.mod.voteFromDbRow(row) : null;
+}
+
+/** Names of WhatsApp's poll modules and their functions (no user data), to help fix the next version. */
+function pollModuleMap(): string {
+  return moduleIdsMatching(/Poll.*Vote|Vote.*Poll|PollsVote|PollVote/i)
+    .slice(0, 25)
+    .map((id) => {
+      const m = openModule(id);
+      const fns = m ? Object.keys(m).filter((k) => typeof m[k] === 'function').slice(0, 12) : [];
+      return `${id}[${fns.join(',')}]`;
+    })
+    .join(' ');
+}
+
 /** Route A: WhatsApp Web's own "get votes" function. null = not available. */
 async function votesFromWhatsApp(pollMsg: AnyObj): Promise<AnyObj[] | null> {
-  const found = findModule(/Poll|Vote/i, (m) => typeof m.getVotes === 'function' && typeof m.getVote === 'function');
+  const found =
+    findModule(/Poll|Vote/i, (m) => typeof m.getVotes === 'function' && (typeof m.upsertVotes === 'function' || typeof m.upsertVotesDb === 'function' || typeof m.getVote === 'function')) ??
+    findModule(/Poll|Vote/i, (m) => typeof m.getVotes === 'function');
   note('votesFunctionRoute', found?.id ?? 'not found');
+  if (!found) note('pollModules', pollModuleMap());
   if (!found) return null;
   try {
     const rows = await found.mod.getVotes([attr(pollMsg, 'id')]);
@@ -332,16 +379,46 @@ export async function readPoll(groupId: string, pollId: string): Promise<PollChe
   const msg = pollMessages(chat).find((m) => idStr(attr(m, 'id')) === pollId);
   if (!msg) throw new Error("This poll isn't loaded any more. Scroll up to it, then tap Refresh.");
   const gm = groupMetadata(chat);
-  const participants = models(attr(gm, 'participants'));
+  const allParticipants = models(attr(gm, 'participants'));
+  // "Stale" entries are out-of-date members WhatsApp still keeps in the list.
+  const staleCount = allParticipants.filter((p) => attr(p, 'stale') === true).length;
+  const sizeValue = attr(gm, 'size');
+  note('memberList', `listed:${allParticipants.length} stale:${staleCount} whatsappSize:${typeof sizeValue === 'number' ? sizeValue : 'none'}`);
+  // Leave stale entries out only when that makes the list agree exactly with WhatsApp's own total.
+  const dropStale = staleCount > 0 && typeof sizeValue === 'number' && allParticipants.length - staleCount === sizeValue;
+  const participants = dropStale ? allParticipants.filter((p) => attr(p, 'stale') !== true) : allParticipants;
   const past = models(attr(gm, 'pastParticipants'));
+  note('pollSnapshotShape', JSON.stringify(shapeOf(attr(msg, 'pollVotesSnapshot'), 3)));
 
-  // Votes, from every route that works.
-  const [fromWa, fromDb] = await Promise.all([votesFromWhatsApp(msg), votesFromDatabase(pollId)]);
-  if (fromWa === null && fromDb === null) {
+  // Votes, from every route that works. A route whose votes can't be fully read is dropped, never half-used.
+  const [fromWa, fromDbRaw] = await Promise.all([votesFromWhatsApp(msg), votesFromDatabase(pollId)]);
+  if (fromDbRaw?.[0]) note('voteRowShape', JSON.stringify(shapeOf(fromDbRaw[0])));
+  const convert = fromDbRaw?.length ? voteConverter() : null;
+  let fromDb = fromDbRaw;
+  if (fromDbRaw && convert) {
+    try {
+      fromDb = fromDbRaw.map(convert);
+      if (fromDb[0]) note('convertedVoteShape', JSON.stringify(shapeOf(fromDb[0])));
+    } catch (e) {
+      note('voteConverterError', e instanceof Error ? e.name : 'error');
+      fromDb = null;
+    }
+  }
+  const readable = (rows: AnyObj[] | null, source: string) => {
+    if (!rows) return null;
+    try {
+      return rows.map(toRecord);
+    } catch (e) {
+      if (!(e instanceof UnreadableVote)) throw e;
+      note(`${source}VotesUnreadable`, 'the chosen option could not be read');
+      return null;
+    }
+  };
+  const waRecords = readable(fromWa, 'whatsapp');
+  const dbRecords = readable(fromDb, 'database');
+  if (waRecords === null && dbRecords === null) {
     throw new Error("Couldn't read the votes on this poll from WhatsApp Web. Tap Copy details for Claude and send them.");
   }
-  const waRecords = fromWa?.map(toRecord) ?? null;
-  const dbRecords = fromDb?.map(toRecord) ?? null;
   const allRecords = [...(waRecords ?? []), ...(dbRecords ?? [])].filter((r) => isPersonRawId(r.sender));
   note('voterIdKinds', kindCounts(allRecords.map((r) => r.sender)));
 

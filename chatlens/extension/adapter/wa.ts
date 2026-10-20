@@ -60,6 +60,10 @@ export function moduleIds(): string[] {
   }
 }
 
+export function moduleIdsMatching(re: RegExp): string[] {
+  return moduleIds().filter((id) => re.test(id));
+}
+
 /**
  * Finds a module by what it contains. Only modules whose name matches
  * `nameFilter` are opened, so we never open WhatsApp's code wholesale.

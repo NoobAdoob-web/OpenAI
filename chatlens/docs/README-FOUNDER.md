@@ -10,7 +10,7 @@ has voted and who hasn't. Nothing else.
 If you installed the earlier test build, remove it first: open `chrome://extensions`,
 find **ChatLens (Phase 0 test build)**, click **Remove**.
 
-1. Download `chatlens/releases/chatlens-poll-checker-v0.1.0.zip` and unzip it
+1. Download `chatlens/releases/chatlens-poll-checker-v0.1.1.zip` and unzip it
    (double-click on Mac; right-click → Extract All on Windows). You get a folder
    with a file called `manifest.json` inside. Keep this folder.
 2. In Chrome, open `chrome://extensions`.

@@ -13,9 +13,10 @@
 // ?variant=legacy   "WAWebCollections" module, phone IDs, votes in the database only
 // ?variant=mixed    members by phone ID, votes by privacy ID, mapped by WhatsApp's lookup
 // ?variant=dm       a one-to-one chat is open instead of a group
+// ?variant=unreadable  votes exist but their chosen option can't be read: must show an error
 (() => {
   const variant = new URLSearchParams(location.search).get('variant') || 'modern';
-  const modern = variant === 'modern' || variant === 'mixed' || variant === 'dm';
+  const modern = variant !== 'legacy';
 
   const wid = (s) => {
     const o = { server: s.split('@')[1], user: s.split('@')[0], toString: () => s };
@@ -30,7 +31,7 @@
   const P = (n) => `91980000000${n}@c.us`;
   const L = (n) => `7700000${n}@lid`;
   const G = '120363000000000001@g.us';
-  const memberId = variant === 'modern' ? L : P; // how the group lists people
+  const memberId = variant === 'modern' || variant === 'unreadable' ? L : P; // how the group lists people
   const voterId = variant === 'legacy' ? P : L; // how votes name people
   const now = Math.floor(Date.now() / 1000);
 
@@ -43,6 +44,7 @@
     // Legacy WhatsApp: names come from the contact list, not the participant.
     ...(variant === 'legacy' ? {} : { contact: contactOf(n) }),
   }));
+  if (modern) participants.push({ id: wid(memberId(8)), isAdmin: false, stale: true, contact: { id: wid(memberId(8)), name: 'Old Entry' } });
   const pastParticipants = [{ id: wid(memberId(9)), isAdmin: false, ...(variant === 'legacy' ? {} : { contact: contactOf(9) }) }];
   const groupMetadata = { id: wid(G), subject: 'Sunday Cricket Club', size: 6, participants: coll(participants), pastParticipants: coll(pastParticipants) };
 
@@ -59,6 +61,8 @@
     { id: oldPollKey, type: 'poll_creation', pollName: 'Old poll', pollOptions: [{ name: 'A', localId: 0 }, { name: 'B', localId: 1 }], pollSelectableOptionsCount: 1, t: now - 86400 * 9, author: wid(memberId(3)) },
     { id: pollKey, type: 'poll_creation', pollName: 'Coming on Sunday?', pollOptions: [{ name: 'Yes', localId: 0 }, { name: 'No', localId: 1 }], pollSelectableOptionsCount: 1, t: now - 86400 * 2, author: wid(memberId(2)) },
   ];
+  groupMsgs.push({ id: key(false, G, 'V1', memberId(5)), type: 'poll_update', pollUpdateParentKey: pollKey, pollOptions: [], t: now - 86400, author: wid(memberId(5)) });
+  groupMsgs.push({ id: key(false, G, 'V2', memberId(2)), type: 'poll_creation', pollUpdateParentKey: pollKey, pollOptions: [{ name: 'Yes', localId: 0 }], t: now - 3600, author: wid(memberId(2)) });
   const groupChat = { id: wid(G), formattedTitle: 'Sunday Cricket Club', groupMetadata, msgs: coll(groupMsgs), active: variant !== 'dm', isGroup: true };
   const dmChat = { id: wid(P(2)), formattedTitle: 'Gaurav', msgs: coll([]), active: variant === 'dm', isGroup: false };
   const chats = coll([dmChat, groupChat]);
@@ -75,8 +79,11 @@
     WAWebUserPrefsMeUser: () => ({ getMaybeMeUser: () => wid(P(1)), getMaybeMeLidUser: () => wid(L(1)) }),
     WAWebChatCollection: () => ({ ChatCollection: chats }),
     WAWebPollsVoteCollection: () => ({
-      getVote: () => null,
+      upsertVotesDb: () => null,
       getVotes: async (keys) => voteRows.filter((r) => keys.some((k) => String(k) === String(r.parentMsgKey))),
+    }),
+    WAWebPollsVoteDbUtils: () => ({
+      voteFromDbRow: (row) => ({ ...row, sender: wid(row.sender), selectedOptionLocalIds: JSON.parse(row.optionsPacked) }),
     }),
     WAWebApiContact: () => ({
       getPhoneNumber: () => null,
@@ -96,7 +103,8 @@
     WAWebSomeOtherModule: () => ({ hello: 1 }),
   };
   const available = {
-    modern: ['WAWebUserPrefsMeUser', 'WAWebChatCollection', 'WAWebPollsVoteCollection', 'WAWebMoment-es', 'WAWebSomeOtherModule'],
+    modern: ['WAWebUserPrefsMeUser', 'WAWebChatCollection', 'WAWebPollsVoteCollection', 'WAWebPollsVoteDbUtils', 'WAWebMoment-es', 'WAWebSomeOtherModule'],
+    unreadable: ['WAWebUserPrefsMeUser', 'WAWebChatCollection', 'WAWebSomeOtherModule'],
     dm: ['WAWebUserPrefsMeUser', 'WAWebChatCollection', 'WAWebPollsVoteCollection', 'WAWebSomeOtherModule'],
     legacy: ['WAWebUserPrefsMeUser', 'WAWebCollections', 'WAWebMoment-es', 'WAWebSomeOtherModule'],
     mixed: ['WAWebUserPrefsMeUser', 'WAWebChatCollection', 'WAWebPollsVoteCollection', 'WAWebApiContact', 'WAWebSomeOtherModule'],
@@ -121,7 +129,12 @@
   const open = indexedDB.open('model-storage', 1);
   open.onupgradeneeded = () => {
     const v = open.result.createObjectStore('poll-votes', { autoIncrement: true });
-    for (const r of voteRows) v.put({ parentMsgKey: String(r.parentMsgKey), sender: String(r.sender), selectedOptionLocalIds: r.selectedOptionLocalIds, senderTimestampMs: r.senderTimestampMs });
+    for (const r of voteRows) {
+      const row = { parentMsgKey: String(r.parentMsgKey), sender: String(r.sender), senderTimestampMs: r.senderTimestampMs };
+      if (modern) row.optionsPacked = JSON.stringify(r.selectedOptionLocalIds);
+      else row.selectedOptionLocalIds = r.selectedOptionLocalIds;
+      v.put(row);
+    }
   };
   open.onsuccess = () => { open.result.close(); window.__fakeReady = true; };
 })();

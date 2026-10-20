@@ -75,6 +75,8 @@ const expectList = async (list, expected, what) => {
 async function fullPollCheck({ panel, see, list }, sourcesText) {
   await see('Found polls in this chat');
   await see('Sunday Cricket Club');
+  const pollCount = await panel.locator('select option').count();
+  if (pollCount !== 2) throw new Error(`expected 2 polls in the picker, got ${pollCount} (vote messages must not be listed)`);
   // Newest poll is preselected.
   const selected = await panel.locator('select').evaluate((s) => s.options[s.selectedIndex].text);
   if (!selected.startsWith('Coming on Sunday?')) throw new Error(`wrong poll preselected: ${selected}`);
@@ -100,7 +102,14 @@ async function fullPollCheck({ panel, see, list }, sourcesText) {
 
 await scenario('modern', (t) => fullPollCheck(t, 'Votes read from two places in WhatsApp Web, and they agree.'));
 await scenario('legacy', (t) => fullPollCheck(t, 'Votes could be read from one place only.'));
-await scenario('mixed', (t) => fullPollCheck(t, 'Votes read from two places in WhatsApp Web, and they agree.'));
+// No database converter here, so the database route is (correctly) dropped as unreadable.
+await scenario('mixed', (t) => fullPollCheck(t, 'Votes could be read from one place only.'));
+await scenario('unreadable', async ({ see, panel }) => {
+  await see('Found polls in this chat');
+  await panel.getByRole('button', { name: 'Check votes' }).click();
+  await see("Couldn't read the votes on this poll from WhatsApp Web.");
+  if (await panel.locator('.people li').count()) throw new Error('showed a list although votes were unreadable');
+});
 await scenario('dm', async ({ see, panel }) => {
   await see('The open chat is not a group. Open a group that has a poll.');
   if (await panel.getByRole('button', { name: 'Check votes' }).count()) throw new Error('Check votes shown outside a group');
