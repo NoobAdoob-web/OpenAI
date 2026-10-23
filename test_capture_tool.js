@@ -26,7 +26,22 @@ const fs = require('fs');
 
   const atc = { 1: [{ 1: 'CR12345', 2: 'AR999', 12: { 1: 'Samsung India' } }], 2: 'cursor-abc' };
 
-  const html = `<!DOCTYPE html><html><body><div id="r">idle</div><script>
+  // Two ad cards shaped like the real thing: the ids/dates are VISIBLE strings,
+  // the CTA is a button, the landing page is a real href with tracking params.
+  const card = (id, date, cta, dest) => `
+    <div data-testid="ad-card" style="width:400px;height:520px">
+      <div>Library ID: ${id}</div>
+      <div>Started running on ${date}</div>
+      <img src="https://cdn.example/creative-${id}.jpg">
+      <div>Unstoppable 5000 mAh battery in Galaxy Z Fold8 Ultra.</div>
+      <a href="https://www.facebook.com/ads/library/?id=${id}">Open in Ad Library</a>
+      <a href="${dest}">${cta}</a>
+    </div>`;
+
+  const html = `<!DOCTYPE html><html><body><div id="r">idle</div>
+    ${card('1075552802051653', '27 Sep 2026', 'Shop Now', 'https://www.samsung.com/in/buy/?utm_source=meta&fbclid=XYZ')}
+    ${card('1083570714080419', '5 Oct 2026', 'Learn More', 'https://www.samsung.com/in/fold/?utm_campaign=q4')}
+    <script>
     window.__go = async function () {
       // 1. fetch to a graphql endpoint  -> should be captured
       const a = await fetch('/api/graphql/?doc_id=123&access_token=EAAB-secret-token', {method:'POST'});
@@ -87,6 +102,25 @@ const fs = require('fs');
   ok('access_token scrubbed from body', !state.bodies.some(b => b.includes('EAAB-secret-token')),
     'token leaked into capture');
 
+  // ── DOM capture: the ad cards as rendered ───────────────────────────────
+  const cards = await page.evaluate(() => window.__ssCapture.cards());
+  ok('found both ad cards', cards.length === 2, 'got ' + cards.length);
+  const c0 = cards[0] || {};
+  ok('card rect captured (what a screenshot crops to)',
+    c0.rect && c0.rect.w === 400 && c0.rect.h === 520, JSON.stringify(c0.rect));
+  ok('visible "Library ID:" string captured', /Library ID: 1075552802051653/.test(c0.text || ''),
+    (c0.text || '').slice(0, 60));
+  ok('visible "Started running on" date captured', /Started running on 27 Sep 2026/.test(c0.text || ''));
+  ok('ad library permalink captured',
+    (c0.links || []).some(l => /ads\/library\/\?id=1075552802051653/.test(l.href)));
+  ok('full landing url captured, tracking params intact',
+    (c0.links || []).some(l => l.href.includes('utm_source=meta') && l.href.includes('fbclid=XYZ')),
+    JSON.stringify((c0.links || []).map(l => l.href)));
+  ok('CTA text captured', (c0.links || []).some(l => l.text === 'Shop Now'),
+    JSON.stringify((c0.links || []).map(l => l.text)));
+  ok('creative media src captured', (c0.media || []).some(m => /creative-1075552802051653\.jpg/.test(m.src)));
+  ok('card markup captured', /data-testid="ad-card"/.test(c0.html || ''));
+
   // save() must actually produce a downloadable file
   const dl = await Promise.all([
     page.waitForEvent('download', { timeout: 8000 }).catch(() => null),
@@ -100,6 +134,10 @@ const fs = require('fs');
     const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
     ok('saved file parses and holds both responses',
       parsed.responses && parsed.responses.length === 2, JSON.stringify(Object.keys(parsed)));
+    ok('saved file holds the ad cards too',
+      parsed.domCards && parsed.domCards.length === 2, String(parsed.domCards && parsed.domCards.length));
+    ok('saved file records viewport + dpr (needed to size screenshots)',
+      parsed.viewport && parsed.viewport.w > 0 && parsed.viewport.dpr > 0, JSON.stringify(parsed.viewport));
     ok('saved file records the site', parsed.site === 'www.facebook.com', parsed.site);
   }
 

@@ -8,11 +8,13 @@
  *   2. F12 -> Console. Chrome may refuse the first paste; type  allow pasting  then Enter.
  *   3. Paste this whole file, press Enter. You should see: [capture] armed.
  *   4. Scroll the results for ~15-20 seconds so the page loads more pages of ads.
- *   5. Run:  __ssCapture.save()
+ *   5. Run:  __ssCapture.cards()   -- should report a non-zero ad-card count
+ *      Then:  __ssCapture.save()
  *      A .json file downloads. Send that file over.
  *
  * WHAT IT DOES / DOES NOT DO
- *   - Reads only responses the page itself requested. It issues no requests of its own.
+ *   - Reads only responses the page itself requested, plus the ad-card markup
+ *     already on screen. It issues no requests of its own.
  *   - Nothing is uploaded anywhere. save() writes a local file, that is all.
  *   - Request bodies and headers are NOT recorded, so no tokens or cookies are captured.
  *   - Long responses are truncated (see MAX_CHARS) to keep the file sendable.
@@ -83,12 +85,71 @@
     return origSend.apply(this, arguments);
   };
 
+  // ── DOM snapshot ─────────────────────────────────────────────────────────
+  // The ad cards as RENDERED are what the extractor will actually read: the
+  // visible "Library ID: …" / "Started running on …" strings, the CTA button,
+  // the landing link, and each card's on-screen rectangle (which is what a
+  // screenshot gets cropped to). Captured as markup with the text intact.
+  function cardRoots() {
+    // Widest plausible net; we work out the right selector from what comes back.
+    var sel = [
+      '[data-testid*="ad" i]',
+      'div[class*="AdCard" i]', 'div[class*="creative" i]',
+      'creative-preview', 'advertiser-creatives creative-preview',
+      'div[role="article"]',
+    ].join(',');
+    var out = [];
+    try { out = Array.prototype.slice.call(document.querySelectorAll(sel)); } catch (e) {}
+    // Also take "blocks that mention a library id", in case the selectors above
+    // miss entirely on the real markup.
+    var all = document.querySelectorAll('div');
+    for (var i = 0; i < all.length && out.length < 200; i++) {
+      var t = all[i].textContent || '';
+      if (/Library ID|Started running|Ad ID/i.test(t) && t.length < 3000) out.push(all[i]);
+    }
+    // Keep only the OUTERMOST candidates: the two passes overlap heavily and a
+    // card's own children also mention the library id.
+    out = out.filter(function (el, idx) {
+      if (out.indexOf(el) !== idx) return false;             // plain duplicate
+      for (var j = 0; j < out.length; j++) {
+        if (out[j] !== el && out[j].contains(el)) return false; // nested inside another
+      }
+      return true;
+    });
+    return out.slice(0, 25);
+  }
+
+  function snapDom() {
+    var cards = cardRoots();
+    return cards.map(function (el) {
+      var r = el.getBoundingClientRect();
+      var html = el.outerHTML || '';
+      // Drop inlined image payloads; keep every attribute and text node.
+      html = html.replace(/(src|srcset)="data:[^"]*"/gi, '$1="<inline-image>"');
+      return {
+        tag: el.tagName.toLowerCase(),
+        rect: { w: Math.round(r.width), h: Math.round(r.height) },
+        text: (el.innerText || '').slice(0, 1200),
+        links: Array.prototype.slice.call(el.querySelectorAll('a[href]'))
+          .slice(0, 6).map(function (a) { return { text: (a.innerText || '').slice(0, 60), href: a.href }; }),
+        media: Array.prototype.slice.call(el.querySelectorAll('img,video'))
+          .slice(0, 6).map(function (m) {
+            return { tag: m.tagName.toLowerCase(), w: m.naturalWidth || m.videoWidth || 0,
+                     h: m.naturalHeight || m.videoHeight || 0, src: (m.currentSrc || m.src || '').split('?')[0] };
+          }),
+        html: scrub(html).slice(0, 25000),
+      };
+    });
+  }
+
   window.__ssCapture = {
     get count() { return hits.length; },
     peek: function (i) { return hits[i || 0]; },
+    cards: function () { var c = snapDom(); console.log('[capture] ad cards found:', c.length); return c; },
     clear: function () { hits = []; console.log('[capture] cleared'); },
     save: function () {
-      if (!hits.length) {
+      var dom = snapDom();
+      if (!hits.length && !dom.length) {
         console.warn('[capture] nothing captured yet - scroll the results, then try again');
         return;
       }
@@ -96,7 +157,9 @@
         site: location.hostname,
         page: location.pathname,
         capturedAt: new Date().toISOString(),
+        viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio },
         note: 'Request bodies and headers were never recorded. Responses are scrubbed and truncated.',
+        domCards: dom,
         responses: hits,
       };
       var blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
@@ -106,9 +169,10 @@
       document.body.appendChild(a);
       a.click();
       a.remove();
-      console.log('[capture] saved', hits.length, 'responses');
+      console.log('[capture] saved', hits.length, 'responses and', dom.length, 'ad cards');
     },
   };
 
   console.log('[capture] armed. Scroll the ad results, then run: __ssCapture.save()');
+  console.log('[capture] to check the cards are being seen first, run: __ssCapture.cards()');
 })();
