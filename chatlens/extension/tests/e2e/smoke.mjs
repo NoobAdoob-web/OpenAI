@@ -112,6 +112,14 @@ await scenario('encrypted', async ({ panel, see, list }) => {
   const optionCounts = flat(await panel.locator('.options li').allInnerTexts());
   if (JSON.stringify(optionCounts) !== JSON.stringify(['Yes 3', 'No 1'])) throw new Error(`Votes by option: got ${JSON.stringify(optionCounts)}`);
   await expectList(list, ['Neha', 'Priya', '~ Rahul'], "Haven't voted");
+  // Tapping an option lists the people who picked it; tapping it again closes the list.
+  await panel.locator('.options button', { hasText: 'Yes' }).click();
+  await see('Picked “Yes” (3)');
+  await expectList(list, ['Gaurav', 'Rahul', 'You'], 'Picked Yes');
+  await panel.locator('.options button', { hasText: 'No' }).click();
+  await expectList(list, ['Hansika'], 'Picked No');
+  await panel.locator('.options button', { hasText: 'No' }).click();
+  await expectList(list, ['Neha', 'Priya', '~ Rahul'], "Haven't voted (after closing an option)");
   await panel.getByRole('button', { name: 'Voted (4)' }).click();
   await expectList(list, ['Gaurav Yes', 'Hansika No', 'Rahul Yes', 'You Yes'], 'Voted');
 });

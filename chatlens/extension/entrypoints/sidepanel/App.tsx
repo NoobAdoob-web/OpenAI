@@ -118,7 +118,8 @@ export default function App() {
 }
 
 function ResultView({ result }: { result: Result }) {
-  const [tab, setTab] = useState<'not' | 'voted' | 'left'>('not');
+  // 'opt:<id>' = the people who picked that option (tap an option to see them).
+  const [tab, setTab] = useState<string>('not');
   const [copied, setCopied] = useState(false);
   if (result.kind === 'none' || result.kind === 'checking') return null;
   if (result.kind === 'error') return <p className="error">{result.message}</p>;
@@ -142,9 +143,12 @@ function ResultView({ result }: { result: Result }) {
   }
   const voted: Member[] = data.snapshot.members.filter((m) => optionsOf.has(m.id)).sort(byName);
   const notVoted = [...check.notVoted].sort(byName);
+  const pickedOption = data.poll.options.find((o) => tab === `opt:${o.id}`);
+  const pickedBy = pickedOption ? [...(check.votedByOption[pickedOption.id] ?? [])].sort(byName) : [];
+  const withPhone = (m: Member) => ({ key: m.id, name: m.displayName, sub: m.phone && m.phone !== m.displayName ? m.phone : undefined });
 
-  const copyNames = async () => {
-    await navigator.clipboard.writeText(notVoted.map((m) => m.displayName).join(', '));
+  const copyNames = async (people: Member[]) => {
+    await navigator.clipboard.writeText(people.map((m) => m.displayName).join(', '));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -158,7 +162,14 @@ function ResultView({ result }: { result: Result }) {
         {check.summary.members} members · {check.summary.voted} voted · {check.summary.notVoted} haven't voted
         {check.summary.votedLeft > 0 && ` · ${check.summary.votedLeft} voted, then left`}
       </p>
-      <OptionCounts options={data.poll.options} votedByOption={check.votedByOption} voted={check.summary.voted} multipleChoice={data.poll.multipleChoice} />
+      <OptionCounts
+        options={data.poll.options}
+        votedByOption={check.votedByOption}
+        voted={check.summary.voted}
+        multipleChoice={data.poll.multipleChoice}
+        selected={pickedOption?.id}
+        onSelect={(id) => setTab(pickedOption?.id === id ? 'not' : `opt:${id}`)}
+      />
       <p className="muted">
         Checked at {new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.{' '}
         {data.crossChecked
@@ -183,11 +194,24 @@ function ResultView({ result }: { result: Result }) {
       {tab === 'not' && (
         <>
           {notVoted.length > 0 && (
-            <button className="small-btn" onClick={() => void copyNames()}>
+            <button className="small-btn" onClick={() => void copyNames(notVoted)}>
               {copied ? 'Copied ✓' : 'Copy these names'}
             </button>
           )}
-          <PeopleList people={notVoted.map((m) => ({ key: m.id, name: m.displayName, sub: m.phone && m.phone !== m.displayName ? m.phone : undefined }))} />
+          <PeopleList people={notVoted.map(withPhone)} />
+        </>
+      )}
+      {pickedOption && (
+        <>
+          <h3>
+            Picked “{pickedOption.label}” ({pickedBy.length})
+          </h3>
+          {pickedBy.length > 0 && (
+            <button className="small-btn" onClick={() => void copyNames(pickedBy)}>
+              {copied ? 'Copied ✓' : 'Copy these names'}
+            </button>
+          )}
+          <PeopleList people={pickedBy.map(withPhone)} />
         </>
       )}
       {tab === 'voted' && (
@@ -204,25 +228,31 @@ function OptionCounts({
   votedByOption,
   voted,
   multipleChoice,
+  selected,
+  onSelect,
 }: {
   options: { id: string; label: string }[];
   votedByOption: Record<string, Member[]>;
   voted: number;
   multipleChoice: boolean;
+  selected?: string;
+  onSelect: (optionId: string) => void;
 }) {
   return (
     <div className="options">
       <h3>
-        Votes by option <span className="muted">(out of {voted} who voted)</span>
+        Votes by option <span className="muted">(out of {voted} who voted · tap one to see who)</span>
       </h3>
       <ul>
         {options.map((o) => {
           const n = votedByOption[o.id]?.length ?? 0;
           return (
             <li key={o.id}>
-              <span className="label">{o.label}</span>
-              <span className="count">{n}</span>
-              <span className="bar" style={{ width: `${voted ? (n / voted) * 100 : 0}%` }} />
+              <button className={selected === o.id ? 'on' : ''} aria-pressed={selected === o.id} onClick={() => onSelect(o.id)}>
+                <span className="label">{o.label}</span>
+                <span className="count">{n}</span>
+                <span className="bar" style={{ width: `${voted ? (n / voted) * 100 : 0}%` }} />
+              </button>
             </li>
           );
         })}
