@@ -6,5 +6,8 @@
        (detection + recognition) via onnxruntime-web. Needs a DOM/canvas +
        WASM, which the MV3 service worker can't provide. -->
   <script type="module" src="ocr.bundle.mjs"></script>
+  <!-- Crops each ad card out of a captureVisibleTab screenshot. Plain script,
+       no ONNX dependency, so it loads instantly and independently. -->
+  <script src="shot.js"></script>
 </body>
 </html>
