@@ -184,3 +184,81 @@ v2.10.0, and I am not repeating that.
 v2.12 offline-only and add them in v2.13? They are the only part that changes what we tell the
 Store and the user about data leaving the device, and that disclosure change is the slowest
 thing to get through review. Everything else proceeds regardless.
+
+---
+
+# Appendix: confirmed against the live sites (24 Oct 2026)
+
+Network access was opened, so everything below is observed, not inferred.
+
+## Meta Ad Library — no login required
+
+Serves results to a logged-out browser. The query form matters:
+
+    https://www.facebook.com/ads/library/?active_status=all&ad_type=all
+      &country=IN&q=samsung&search_type=keyword_unordered
+
+`search_type=keyword_unordered` is required. Without it the page renders its
+whole chrome and then says "No ads match your search criteria", which looks
+like a block but is not one.
+
+**Card root.** Facebook's class names are generated (`xh8yej3`, `x1plvlek`)
+and churn on every deploy, so they are unusable as selectors. The card root is
+found structurally instead: take the text node holding `Library ID: <n>`, then
+climb while the parent still contains exactly one library id, stopping also if
+the parent exceeds 80% of body width. That lands on the grid cell every time —
+445px wide, 540–590px tall, holding the creative, the copy and the CTA.
+
+**Line order inside a card**, which is how the fields are read:
+
+    Active | Library ID: <n> | Started running on <date> | Platforms
+    ["This ad has multiple versions" | "<n> ads use this creative and text"]
+    ["EU transparency"] | "See ad details"
+    <Brand> | Sponsored
+    <body copy, one or more lines>
+    <DISPLAY.URL IN CAPS>
+    <headline>
+    [<price or extra description>]
+    <CTA>
+
+This is exactly the reference workbook's Description column — body copy,
+display URL and headline joined with newlines. The variant line also supplies
+the `Variants` column proposed in §1.
+
+**Landing page.** Outbound links are wrapped: `l.facebook.com/l.php?u=<encoded>`.
+Decoding the `u` parameter yields the real destination with its tracking
+parameters, which is what the reference file hyperlinks.
+
+**Fill rates, 25 live cards:** library id 25/25, brand 25/25, status 25/25,
+CTA 25/25, landing page 25/25, date 21/25. Asset type and creative media read
+12/25 only because images below the fold are lazy-loaded — that closes in P1,
+which scrolls every card into view anyway to screenshot it.
+
+## Google Ads Transparency Center — no login required
+
+Advertiser pages are reached as
+`/advertiser/<AR…>?region=<CC>`, and the search box's own RPC supplies the id:
+`SearchService/SearchSuggestions` returns `{"1":[{"1":{"1":"Samsung",
+"2":"AR12279191429158273025","3":"MY","4":{"2":{"1":"14","2":"14"}}}}]}` —
+name, advertiser id, region, ad count. This confirms the numeric-key
+protobuf-JSON shape that §2 could previously only cite second-hand.
+
+**Card root is a custom element: `creative-preview`.** Far more stable than
+Facebook's generated classes. Each card is 496×240 and carries the advertiser
+name, the creative image from `tpc.googlesyndication.com/archive/simgad/<id>`,
+and a link to the creative detail page
+`/advertiser/<AR…>/creative/<CR…>?region=<CC>`.
+
+**One real difference from Meta:** the ATC grid card is thin — advertiser name
+and creative only. Format, first-shown and last-shown live on the creative
+detail page. So filling those columns needs either a per-creative pass (the
+existing Deep Scrape pattern) or the grid RPC response, which carries more than
+the DOM renders. Decide once the first capture is parsed; the per-creative pass
+is the safer default and is already-built machinery.
+
+## Consequences for the plan
+
+- Blocker #2 is closed: no capture file is needed from the user for either site.
+- `tpc.googlesyndication.com` is needed in host_permissions for ATC creatives.
+- Meta's screenshots can be cropped from the page as planned; the creative also
+  has a direct CDN url if a higher-resolution copy is ever wanted.
