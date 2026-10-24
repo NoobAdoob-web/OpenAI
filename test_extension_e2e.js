@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
 
-const EXT = path.resolve('chrome-scraper-extension');
+const EXT = process.env.EXT_DIR || path.resolve('chrome-scraper-extension');
 
 (async () => {
   let pass = 0, fail = 0;

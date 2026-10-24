@@ -6,7 +6,31 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.11.0  (current)
+v2.11.1  (current)
+------------------------------------------------------------------------
+Maintenance release. No change to what the extension does for users; it is
+the same feature set as v2.11.0, repackaged after internal restructuring.
+
+- The .xlsx writer moved out of popup.js into popup/xlsx.js so it can be
+  tested without a browser DOM. Same output; the export path is unchanged
+  and is covered by a new test that validates the produced workbook with an
+  independent spreadsheet reader rather than trusting our own writer.
+- Added an offscreen canvas helper used by the forthcoming ad-library
+  export. It is inert in this release.
+- The reel video-OCR test fixture is now committed, so that test is
+  runnable from a clean checkout. Re-verified on this build: all four
+  on-screen texts recovered from separate frames of a moving video.
+- Packaging: development material (docs, the capture tool, fixtures) and
+  modules not yet wired to any UI are now excluded from the upload, and the
+  build verifies that every file the manifest and HTML pages reference is
+  actually present.
+
+Nothing in the permissions, host permissions, or data handling changed
+between v2.11.0 and v2.11.1.
+
+
+------------------------------------------------------------------------
+v2.11.0
 ------------------------------------------------------------------------
 - READS TEXT FROM THE VIDEO, not just the cover image. This was the real
   cause of the empty/short Image Text on reels: a reel shows different text

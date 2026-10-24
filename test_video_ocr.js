@@ -6,7 +6,9 @@ const path = require('path');
 const fs = require('fs');
 
 const EXT = path.resolve('chrome-scraper-extension');
-const VIDEO = '/tmp/claude-0/-home-user-OpenAI/462f2b8c-05f9-5fca-8e56-3b43fedb71b6/scratchpad/vid/reel.webm';
+// Committed fixture; regenerate with `node make_video_fixture.js` if the
+// expected on-screen texts ever change.
+const VIDEO = path.resolve('chrome-scraper-extension/tools/fixtures/reel.webm');
 
 (async () => {
   let pass = 0, fail = 0;

@@ -2,3 +2,5 @@ node_modules/
 vendor/
 chrome-scraper-extension-v*.zip
 ScrapeSuite-v*.zip
+store-assets/
+ScrapeSuite-v*.zip
