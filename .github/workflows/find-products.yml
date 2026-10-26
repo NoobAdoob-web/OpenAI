@@ -1,0 +1,57 @@
+name: Find all products for a brand
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: "What to search for (e.g. catch, catch hing)"
+        required: true
+        default: "catch"
+      pincode:
+        description: "Pincode to search from"
+        required: true
+        default: "122002"
+      platform:
+        description: "Platform"
+        type: choice
+        options: [zepto]
+        default: zepto
+      include_other_brands:
+        description: "Also list products that don't contain the search words in their name"
+        type: boolean
+        default: false
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Search and list products
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+          QUERY: ${{ github.event.inputs.query }}
+          PINCODE: ${{ github.event.inputs.pincode }}
+          PLATFORM: ${{ github.event.inputs.platform }}
+          OTHER_BRANDS: ${{ github.event.inputs.include_other_brands }}
+        run: |
+          extra=""
+          if [ "$OTHER_BRANDS" = "true" ]; then extra="--include-other-brands"; fi
+          python run.py discover --query "$QUERY" --pincode "$PINCODE" --platform "$PLATFORM" $extra
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: product-list-${{ github.run_number }}
+          path: |
+            results/discover_*.csv
+            debug/
+          retention-days: 14
