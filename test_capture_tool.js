@@ -121,6 +121,46 @@ const fs = require('fs');
   ok('creative media src captured', (c0.media || []).some(m => /creative-1075552802051653\.jpg/.test(m.src)));
   ok('card markup captured', /data-testid="ad-card"/.test(c0.html || ''));
 
+  // ── A normal POST FEED, not an ad library ───────────────────────────────
+  // Facebook page posts have no "Library ID"; the card is found by climbing
+  // from the permalink. Markup mirrors the real thing: generated class names,
+  // deeply nested wrappers, a timestamp link and a separate media link.
+  const feed = `<!DOCTYPE html><html><body><div class="x1n2onr6">
+    ${[['1449344499914716', '25 February', 'Introducing the Galaxy S26 FE.'],
+       ['2114398449467041', '3 November', 'Festive offers are live now.'],
+       ['3303206513202412', '14 October', 'Meet the new Bespoke AI fridge.']]
+      .map(([id, when, copy]) => `
+      <div class="xh8yej3"><div class="x1plvlek"><div class="xdj266r">
+        <div><a href="https://www.facebook.com/SamsungIndia/">Samsung India</a></div>
+        <div><a href="/SamsungIndia/posts/${id}/"><span>${when}</span></a></div>
+        <div class="x78zum5">${copy}</div>
+        <a href="/reel/${id}/"><img src="https://scontent.xx.fbcdn.net/v/${id}.jpg"></a>
+      </div></div></div>`).join('')}
+  </div></body></html>`;
+
+  const feedPage = await context.newPage();
+  await feedPage.goto('https://www.facebook.com/SamsungIndia/', { waitUntil: 'domcontentloaded' })
+    .catch(() => {});
+  await feedPage.setContent(feed);
+  await feedPage.evaluate(s => { eval(s); }, snippet);
+  const feedCards = await feedPage.evaluate(() => window.__ssCapture.cards());
+
+  ok('post feed: one card per post, not per link',
+    feedCards.length === 3, 'got ' + feedCards.length);
+  ok('post feed: permalink captured',
+    (feedCards[0] || {}).links.some(l => /posts\/1449344499914716/.test(l.href)),
+    JSON.stringify((feedCards[0] || {}).links || []));
+  ok('post feed: visible date text captured',
+    /25 February/.test((feedCards[0] || {}).text || ''), (feedCards[0] || {}).text);
+  ok('post feed: post copy captured',
+    /Galaxy S26 FE/.test((feedCards[0] || {}).text || ''));
+  ok('post feed: media src captured',
+    ((feedCards[0] || {}).media || []).some(m => /1449344499914716\.jpg/.test(m.src)));
+  ok('post feed: cards are distinct posts',
+    new Set(feedCards.map(c => c.text)).size === 3,
+    JSON.stringify(feedCards.map(c => (c.text || '').slice(0, 30))));
+  await feedPage.close();
+
   // save() must actually produce a downloadable file
   const dl = await Promise.all([
     page.waitForEvent('download', { timeout: 8000 }).catch(() => null),

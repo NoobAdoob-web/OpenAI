@@ -90,25 +90,81 @@
   // visible "Library ID: …" / "Started running on …" strings, the CTA button,
   // the landing link, and each card's on-screen rectangle (which is what a
   // screenshot gets cropped to). Captured as markup with the text intact.
+  // A link that identifies ONE post or ad. Finding the card is then a matter
+  // of climbing until the parent would cover two of them.
+  var PERMALINK = /\/(?:posts|permalink|videos|reel|reels|watch|photo|p|tv)\/|story_fbid=|[?&]v=|\/ads\/library\/\?id=|\/creative\/CR/i;
+
+  function isPermalink(a) {
+    var h = a.getAttribute('href') || '';
+    if (!h || h.charAt(0) === '#') return false;
+    return PERMALINK.test(h);
+  }
+
+  /* Which POST a link points at. One card usually links to the same post more
+   * than once - the timestamp and the media, say - so counting raw hrefs would
+   * stop the climb inside the card. Collapse to the post's own id first. */
+  function postKey(a) {
+    var h = a.getAttribute('href') || '';
+    var m = h.match(/(?:\/p\/|\/reel\/|\/reels\/|\/tv\/|\/creative\/)([A-Za-z0-9_-]{5,})/) ||
+            h.match(/(?:story_fbid=|[?&]v=|[?&]id=)([A-Za-z0-9_-]{5,})/) ||
+            h.match(/\/(\d{8,})\/?(?:$|[?#])/) ||
+            h.match(/\/(?:posts|permalink|videos|photo)\/([A-Za-z0-9_.-]{5,})/);
+    return m ? m[1] : h.split('?')[0];
+  }
+
   function cardRoots() {
-    // Widest plausible net; we work out the right selector from what comes back.
+    var out = [];
+
+    // Pass 1: named containers, where a site gives us one.
     var sel = [
-      '[data-testid*="ad" i]',
+      '[data-testid*="ad" i]', '[role="article"]',
       'div[class*="AdCard" i]', 'div[class*="creative" i]',
       'creative-preview', 'advertiser-creatives creative-preview',
-      'div[role="article"]',
     ].join(',');
-    var out = [];
     try { out = Array.prototype.slice.call(document.querySelectorAll(sel)); } catch (e) {}
-    // Also take "blocks that mention a library id", in case the selectors above
-    // miss entirely on the real markup.
+
+    // Pass 2: climb from each post permalink. This is the rule that actually
+    // works on obfuscated markup - Facebook's class names are generated and
+    // churn on every deploy, so only structure can be relied on. Climb while
+    // the parent still describes exactly ONE post; the moment it covers two,
+    // it is the feed, so stop below it.
+    var links = Array.prototype.slice.call(document.querySelectorAll('a[href]')).filter(isPermalink);
+    var countLinks = function (n) {
+      var seen = {}, c = 0;
+      var as = n.querySelectorAll('a[href]');
+      for (var i = 0; i < as.length; i++) {
+        if (!isPermalink(as[i])) continue;
+        var key = postKey(as[i]);
+        if (seen[key]) continue;
+        seen[key] = 1; c++;
+      }
+      return c;
+    };
+    for (var li = 0; li < links.length && out.length < 300; li++) {
+      var el = links[li];
+      for (var d = 0; d < 20 && el && el.parentElement; d++) {
+        var par = el.parentElement;
+        // The moment a parent covers two posts it is the feed, so stop below
+        // it. Deliberately no width test: cards are not reliably narrower
+        // than the page on mobile or in a full-width feed, and an early stop
+        // there lands inside the card instead of on it.
+        if (countLinks(par) > 1) break;
+        if (par === document.body || par === document.documentElement) break;
+        el = par;
+      }
+      // a card has some substance to it; a bare link is not one
+      if (el && (el.innerText || '').length > 20) out.push(el);
+    }
+
+    // Also take blocks that name an ad explicitly, for the ad libraries.
     var all = document.querySelectorAll('div');
-    for (var i = 0; i < all.length && out.length < 200; i++) {
+    for (var i = 0; i < all.length && out.length < 400; i++) {
       var t = all[i].textContent || '';
       if (/Library ID|Started running|Ad ID/i.test(t) && t.length < 3000) out.push(all[i]);
     }
-    // Keep only the OUTERMOST candidates: the two passes overlap heavily and a
-    // card's own children also mention the library id.
+
+    // Keep only the OUTERMOST candidates: the passes overlap heavily, and a
+    // card's own children match too.
     out = out.filter(function (el, idx) {
       if (out.indexOf(el) !== idx) return false;             // plain duplicate
       for (var j = 0; j < out.length; j++) {
