@@ -161,3 +161,74 @@ current deep scrape before choosing a default.
    "Galaxy S26 FE" as one product or two.
 
 Items 2 and 3 are quick. Item 1 is the only blocker, and only for Facebook.
+
+
+---
+
+# Appendix: measured against five real exports (11 Nov 2026)
+
+Five workbooks from live runs — two YouTube (30 rows each), two Instagram
+(18 and 78 rows), one Facebook (90 rows). What they show:
+
+## Coverage today, before any of this work
+
+| | Caption | Date | Views | Likes | Comments | Duration |
+|---|---|---|---|---|---|---|
+| YouTube | 100% | 100%* | **0%** | **0%** | **0%** | 100% |
+| Instagram (78 rows) | 37% | **37%** | 100% | 100% | 100% | 3% |
+| Facebook (90 rows) | **0%** | **6%** | 100% | **0%** | **0%** | 6% |
+
+\* YouTube's "date" is the raw relative string, not a date — see below.
+
+## Instagram: the decoder is validated and is a large win
+
+Decoded a date for **78/78 (100%)** of posts, against 37% today.
+
+Of the 29 rows that already had a date, **26 match exactly** when rendered in
+the timezone they were recorded in (IST). The three that differ are each
+exactly **one day early**, at posting times indistinguishable from the 26 that
+agree — so this is not a timezone or rounding effect. It is the shortcode
+carrying the media's *creation* time, which for a scheduled post precedes
+publication.
+
+The error is **bounded and one-directional — never late**. So:
+
+- a decoded date never overwrites one the API supplied;
+- its precision is reported as `upload`, not `exact`;
+- date-range filtering widens the start of the range by `UPLOAD_SKEW_DAYS`
+  (1), so a post uploaded the day before it went live is not silently dropped.
+
+These 29 pairs are committed as `tools/fixtures/ig_known_dates.json` and
+asserted in `test_post_dates.js`, so a future change that regresses this fails
+the suite.
+
+## YouTube: a bug the real data caught
+
+Exports contain **`"5d ago"`**, not `"5 days ago"` — and one row carried a real
+date (`2026-11-06`), so the column mixes formats. The original parser only
+matched the long form and would have failed on every YouTube row. It now
+handles the compact form too (`45m`, `20h`, `5d`, `3w`, `2mo`, `1y`, with `mo`
+correctly beating `m`).
+
+Separately, and outside this plan's scope: YouTube Views, Likes and Comments
+are **0% filled**. That is a bigger hole than dates were, and worth its own
+fix.
+
+## Facebook: no shortcode trick exists — confirmed, not assumed
+
+Facebook reel URLs carry a numeric id, so the obvious hope was that it encodes
+a timestamp like Instagram's. It does not. Against the five dated rows:
+
+    2026-10-07 -> 1346074614070595
+    2026-10-14 -> 3303206513202412
+    2026-10-27 -> 1668806331423782
+    2026-11-03 -> 2114398449467041
+    2026-02-25 -> 1449344499914716
+
+Non-monotonic: a post two weeks later has an id less than half the size. These
+ids are not time-ordered, so no decoding is possible. Facebook dates must come
+from the rendered card or the page's own API responses, which still needs a
+capture from a logged-in browser.
+
+Facebook is also the weakest platform overall — caption, likes and comments are
+all 0% — so that capture buys far more than dates alone.

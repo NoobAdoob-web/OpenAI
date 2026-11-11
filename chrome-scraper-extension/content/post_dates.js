@@ -63,13 +63,27 @@
     week: 604800000, month: 2629800000, year: 31557600000,
   };
 
-  /* "5 days ago" -> a Date, plus how precise that actually is. Streamed or
-   * scheduled items say "Streamed 3 weeks ago", so the prefix is tolerated. */
+  // YouTube renders both the long form ("5 days ago") and, in the grid, a
+  // compact one ("5d ago"). Real exports are full of the compact form, so both
+  // must parse. Note "m" is minutes but "mo" is months.
+  var ABBREV = { s: 'second', m: 'minute', h: 'hour', d: 'day', w: 'week', mo: 'month', y: 'year' };
+
+  /* "5 days ago" or "5d ago" -> a Date, plus how precise that actually is.
+   * Streamed and premiered items carry a prefix ("Streamed 3 weeks ago"), so
+   * the match is not anchored to the start. */
   function dateFromRelative(text, now) {
-    var m = String(text || '').match(/(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago/i);
-    if (!m) return null;
-    var unit = m[2].toLowerCase();
-    var ms = (now || Date.now()) - Number(m[1]) * REL_UNITS[unit];
+    var t = String(text || '');
+    var unit = null, qty = null;
+    var m = t.match(/(\d+)\s*(second|minute|hour|day|week|month|year)s?\s+ago/i);
+    if (m) { qty = Number(m[1]); unit = m[2].toLowerCase(); }
+    else {
+      // compact: 45m, 20h, 5d, 3w, 2mo, 1y - "mo" must win over "m"
+      m = t.match(/(\d+)\s*(mo|[smhdwy])\s+ago/i);
+      if (!m) return null;
+      qty = Number(m[1]); unit = ABBREV[m[2].toLowerCase()];
+      if (!unit) return null;
+    }
+    var ms = (now || Date.now()) - qty * REL_UNITS[unit];
     return {
       date: new Date(ms),
       // Anything coarser than a day is an estimate, and the UI should say so.
@@ -92,13 +106,45 @@
       return { date: new Date(row.Date), ymd: row.Date.slice(0, 10), source: 'existing', precision: 'day' };
     }
     var d = igDateFromUrl(row && row.URL);
-    if (d) return { date: d, ymd: ymd(d), source: 'shortcode', precision: 'exact' };
+    // Checked against 29 dates from real exports: 26 matched to the day. The
+    // three that did not were each exactly one day EARLY, at posting times
+    // indistinguishable from the ones that matched - i.e. the shortcode
+    // carries the media's CREATION time, which for a scheduled post precedes
+    // publication. The error is bounded and one-directional, never late, so
+    // callers widen the start of a date range by UPLOAD_SKEW_DAYS.
+    if (d) return { date: d, ymd: ymd(d), source: 'shortcode', precision: 'upload' };
     var rel = dateFromRelative((row && (row._relativeDate || row.Date)) || '', now);
     if (rel) return { date: rel.date, ymd: ymd(rel.date), source: 'relative', precision: rel.precision };
     return null;
   }
 
+  // How far a shortcode-derived date can precede the published date.
+  var UPLOAD_SKEW_DAYS = 1;
+
+  /* Is this row inside the user's window? `from`/`to` are YYYY-MM-DD strings,
+   * either may be empty. A date we derived from the shortcode gets the start
+   * of the range widened, so a post scheduled the day after upload is not
+   * silently dropped. Rows with no date at all are kept and flagged, never
+   * discarded - a filter that quietly drops what it could not read is worse
+   * than no filter. */
+  function inDateRange(resolved, from, to) {
+    if (!resolved) return { keep: true, undated: true };
+    var pad = resolved.source === 'shortcode' ? UPLOAD_SKEW_DAYS : 0;
+    var t = resolved.date.getTime();
+    if (from) {
+      var lo = new Date(from + 'T00:00:00').getTime() - pad * 86400000;
+      if (t < lo) return { keep: false, undated: false };
+    }
+    if (to) {
+      var hi = new Date(to + 'T23:59:59').getTime() + pad * 86400000;
+      if (t > hi) return { keep: false, undated: false };
+    }
+    return { keep: true, undated: false };
+  }
+
   var API = {
+    inDateRange: inDateRange,
+    UPLOAD_SKEW_DAYS: UPLOAD_SKEW_DAYS,
     shortcodeToId: shortcodeToId,
     igDateFromShortcode: igDateFromShortcode,
     igShortcodeFromUrl: igShortcodeFromUrl,
