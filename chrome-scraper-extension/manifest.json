@@ -107,6 +107,8 @@
         "*://*.amazon.com.tr/*"
       ],
       "js": [
+        "content/post_dates.js",
+        "content/products.js",
         "content/content.js"
       ],
       "run_at": "document_idle",

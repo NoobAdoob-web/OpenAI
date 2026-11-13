@@ -38,7 +38,8 @@
     'Likes', 'Likes (number)',
     'Comments', 'Comments (number)',
     'Shares', 'Shares (number)',
-    'Date', 'URL', 'Thumbnail'
+    'Date', 'Date source', 'Product',
+    'URL', 'Thumbnail'
   ];
   const NUM_RE = /^[\d][\d.,]*\s*[KMB]?$/i;  // "1,234", "12.3K", "4.5M", "893K"
 
@@ -619,6 +620,33 @@
     return null;
   }
 
+  /* Date and product, from data already in hand. Never overwrites a value an
+   * extractor or the page's own API already supplied. */
+  function enrichRow(r) {
+    try {
+      const D = (typeof ScrapeSuiteDates !== 'undefined') ? ScrapeSuiteDates : null;
+      if (D) {
+        const got = D.resolvePostDate(r);
+        if (got) {
+          if (!r.Date || !/^\d{4}-\d{2}-\d{2}/.test(r.Date)) r.Date = got.ymd;
+          // Say where the date came from, so an upload time or an estimate is
+          // never mistaken for a published date.
+          r['Date source'] = r['Date source'] || ({
+            existing: 'post data',
+            shortcode: 'from post id (upload time, may precede publishing)',
+            relative: got.precision === 'approx' ? 'estimated from "x months ago"' : 'from "x ago" label',
+          })[got.source] || '';
+        }
+      }
+      const P = (typeof ScrapeSuiteProducts !== 'undefined') ? ScrapeSuiteProducts : null;
+      if (P && !r.Product) {
+        const text = [r.Caption, r.Headline, r['Image Text']].filter(Boolean).join(' ');
+        r.Product = P.detectProducts(text).join(', ');
+      }
+    } catch (e) { console.warn('IDS enrich error', e); }
+    return r;
+  }
+
   function emptyRow() {
     const r = {};
     SOCIAL_COLUMNS.forEach(c => { r[c] = ''; });
@@ -634,6 +662,11 @@
       else if (platform === 'facebook')  { const o = extractFacebook();  rows = o.rows; container = o.container; }
       else if (platform === 'linkedin')  { const o = extractLinkedIn();  rows = o.rows; container = o.container; }
     } catch (e) { console.warn('IDS platform extractor error', e); }
+
+    // Fill the columns we can derive without another request: the post's own
+    // date, and which product line it is about. Done here, once, so every
+    // platform benefits and no extractor can forget.
+    rows.forEach(enrichRow);
 
     // Dedupe by URL (fallback to caption) and drop totally-empty rows
     const seen = new Set();
