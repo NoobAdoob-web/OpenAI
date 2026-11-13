@@ -6,7 +6,55 @@ Downloaded builds are named: chrome-scraper-extension-vX.Y.Z.zip
 
 
 ------------------------------------------------------------------------
-v2.11.1  (current)
+v2.12.0  (current)
+------------------------------------------------------------------------
+DATES ON EVERY POST, AND A DATE RANGE TO SCRAPE BY
+
+- Instagram posts are now dated for 100% of rows, with no extra requests:
+  the publish time is encoded in the post's own URL. Previously about 37%
+  of rows had a date. Checked against 29 dates from real exports - 26 match
+  the day exactly, and the three that differ are each one day early because
+  the id carries the UPLOAD time, which precedes publication for a
+  scheduled post. The new "Date source" column says which kind of date you
+  are looking at, so an approximation is never shown as a published date.
+- YouTube dates now parse the compact "5d ago" form the site actually uses.
+  The old parser only understood "5 days ago" and failed on every row.
+- Facebook now fills dates, durations and captions from the page's own
+  data: 100% of reels dated and timed, two thirds captioned, against 6% /
+  6% / 0% before.
+- NEW "Posts from / to" dates beside the scroll count. Because a feed runs
+  newest first, scraping now STOPS once it passes your start date instead
+  of scrolling the whole profile. On a 120-post feed asking for three
+  weeks it loaded 36 posts rather than 120.
+  It will not stop on the first old post - pinned posts sit out of order -
+  and on a feed sorted by something other than date it detects that,
+  disables the shortcut and says so instead of returning a short list.
+
+FILTER BY PRODUCT
+
+- NEW "Product" column. Posts are grouped by the product line they are
+  about, from hashtags, model numbers and a category list, all on-device.
+  A trailing qualifier makes a different product: "Galaxy S26" and
+  "Galaxy S26 FE" are never merged, while "S26 FE" and "Galaxy S26 FE" are.
+  Built and measured against 59 captions from real exports.
+
+SCREENSHOTS OF YOUR TOP POSTS
+
+- NEW section: rank by views, likes or comments, and download a ZIP of the
+  top posts as they appear on the page, named by rank so 01 is the top one.
+  Posts with no value for the chosen metric are left out rather than
+  ranked as zero.
+
+KNOWN GAPS, STATED PLAINLY
+
+- Facebook's Reels tab does not publish likes, comments or shares at all,
+  so those columns stay empty there.
+- YouTube views, likes and comments are not yet collected, so the top-post
+  screenshots have nothing to rank by on YouTube. Next on the list.
+
+
+------------------------------------------------------------------------
+v2.11.1
 ------------------------------------------------------------------------
 Maintenance release. No change to what the extension does for users; it is
 the same feature set as v2.11.0, repackaged after internal restructuring.

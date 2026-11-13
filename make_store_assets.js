@@ -60,6 +60,16 @@ const PANELS = [
   { id: 'analysis', title: 'Analysis built in, not bolted on',
     sub: 'Top performers, posting cadence and plain-language insights in every export.',
     setup: () => {}, focus: '#analysis-insights' },
+  { id: 'dates', title: 'Scrape only the dates you want',
+    sub: 'Set a date range and scraping stops when it passes it, instead of scrolling everything.',
+    setup: () => {
+      const f = document.getElementById('input-from'); if (f) f.value = '2026-10-20';
+      const t = document.getElementById('input-to'); if (t) t.value = '2026-11-11';
+    }, focus: '#scrape-section' },
+  { id: 'shots', title: 'Screenshots of your top posts',
+    sub: 'Rank by views, likes or comments and download them as one ZIP.',
+    setup: () => { const c = document.getElementById('shots-toggle'); if (c && !c.checked) { c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); } },
+    focus: '#shots-section' },
   { id: 'howto', title: 'Excel or CSV in one click',
     sub: 'A ranked sheet plus all the raw data, ready to drop into your own analysis.',
     setup: () => { const d = document.getElementById('help-box'); if (d) d.open = true; }, focus: '#help-box' },
