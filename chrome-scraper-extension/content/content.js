@@ -1544,11 +1544,41 @@
   }
 
   // ─── Infinite scroll crawl ────────────────────────────────────────────────
-  async function startInfiniteScrollCrawl(maxScrolls) {
+  /* Posts older than the cutoff that must be seen in a row before the crawl
+   * gives up. Pinned posts sit out of order at the top of a feed, and a
+   * channel can be sorted by popularity, so stopping at the first old post
+   * would cut the run short. One screenful is a safe margin. */
+  const OVERSHOOT = 12;
+
+  function rowDate(r) {
+    try {
+      const D = (typeof ScrapeSuiteDates !== 'undefined') ? ScrapeSuiteDates : null;
+      const got = D && D.resolvePostDate(r);
+      return got ? got.date.getTime() : null;
+    } catch (_) { return null; }
+  }
+
+  /* Is this feed actually newest-first? If it is not, a date cutoff cannot be
+   * used to stop early and we must scroll the requested amount and filter at
+   * the end instead. Judged on the dated rows only. */
+  function looksChronological(rows) {
+    const ts = rows.map(rowDate).filter(t => t !== null);
+    if (ts.length < 5) return true;           // too little to judge; assume yes
+    let desc = 0;
+    for (let i = 1; i < ts.length; i++) if (ts[i] <= ts[i - 1]) desc++;
+    return desc / (ts.length - 1) >= 0.8;
+  }
+
+  async function startInfiniteScrollCrawl(maxScrolls, opts) {
     crawlActive = true;
     const allRows = [...currentData.rows];
     let scroll = 1;
     let staleCount = 0;
+    let stopReason = '';
+
+    const o = opts || {};
+    const fromMs = o.from ? new Date(o.from + 'T00:00:00').getTime() : null;
+    let chronological = true;
 
     sendProgress(scroll, allRows);
 
@@ -1578,18 +1608,41 @@
         candidates = fresh;
       }
 
-      sendProgress(scroll, allRows);
+      sendProgress(scroll, allRows, stopReason);
+
+      // Once a date cutoff is set there is nothing below it worth loading -
+      // a feed runs newest first, so the crawl can stop itself rather than
+      // scrolling a whole profile and discarding most of it.
+      if (fromMs !== null && allRows.length >= OVERSHOOT) {
+        // Judged once, then kept: a feed that showed itself to be out of
+        // order must not be treated as ordered again later just because a
+        // run of newer posts happened to arrive in sequence.
+        if (chronological) chronological = looksChronological(allRows);
+        if (chronological) {
+          const tail = allRows.slice(-OVERSHOOT).map(rowDate);
+          if (tail.every(t => t !== null && t < fromMs)) {
+            stopReason = 'reached ' + o.from;
+            break;
+          }
+        } else if (!stopReason) {
+          stopReason = 'feed is not in date order - scrolling fully, then filtering';
+        }
+      }
 
       if (allRows.length === prevSize) {
         staleCount++;
-        if (staleCount >= 3) break; // No new content after 3 consecutive scrolls
+        if (staleCount >= 3) { stopReason = stopReason || 'no new posts loading'; break; }
       } else {
         staleCount = 0;
       }
     }
 
     crawlActive = false;
-    chrome.runtime.sendMessage({ type: 'crawlComplete', allRows, pages: scroll }).catch(() => {});
+    chrome.runtime.sendMessage({
+      type: 'crawlComplete', allRows, pages: scroll,
+      stopReason: stopReason || (scroll > maxScrolls ? 'reached the scroll limit' : 'stopped'),
+      chronological,
+    }).catch(() => {});
   }
 
   async function waitForNewItems(currentCount, timeout = 7000) {
@@ -1618,8 +1671,8 @@
     return candidates[0] || null;
   }
 
-  function sendProgress(page, allRows) {
-    chrome.runtime.sendMessage({ type: 'crawlProgress', page, allRows }).catch(() => {});
+  function sendProgress(page, allRows, note) {
+    chrome.runtime.sendMessage({ type: 'crawlProgress', page, allRows, note: note || '' }).catch(() => {});
   }
 
   async function waitForChange(snapshot, timeout = 8000) {
@@ -1789,7 +1842,7 @@
         break;
 
       case 'startInfiniteScroll':
-        startInfiniteScrollCrawl(msg.maxScrolls || 100);
+        startInfiniteScrollCrawl(msg.maxScrolls || 100, { from: msg.from, to: msg.to });
         sendResponse({ ok: true });
         break;
 

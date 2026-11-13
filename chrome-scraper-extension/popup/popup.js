@@ -56,7 +56,8 @@ async function restoreTabState() {
     if (state.crawlRows && state.crawlRows.length > 0) {
       exportRows = state.crawlRows;
       if (state.crawlComplete) {
-        setStatus(`Complete — ${exportRows.length} rows collected`, 'done');
+        setStatus(`Complete — ${exportRows.length} rows collected` +
+        (msg.stopReason ? ` (${msg.stopReason})` : ''), 'done');
       } else {
         setStatus(`${exportRows.length} rows collected`, '');
       }
@@ -508,7 +509,8 @@ function applyMeta(url, meta) {
 // Render the preview as the ranked (Top Performers) view.
 function refreshPreview() {
   if (!exportRows.length) return;
-  renderPreview(buildRanked(orderByPopulated(currentHeaders(), exportRows), exportRows));
+  const shown = rowsForExport();
+  renderPreview(buildRanked(orderByPopulated(currentHeaders(), shown), shown));
   renderAnalysis();
 }
 
@@ -570,11 +572,62 @@ function bindUI() {
   $('ocr-toggle').addEventListener('change', onOcrToggle);
   $('btn-ocr-start').addEventListener('click', onOcrStart);
   $('btn-ocr-stop').addEventListener('click', onOcrStop);
+  $('btn-clear-dates').addEventListener('click', () => {
+    $('input-from').value = ''; $('input-to').value = '';
+    refreshPreview(); updateExportButtons();
+  });
+  $('input-from').addEventListener('change', onDateRangeChange);
+  $('input-to').addEventListener('change', onDateRangeChange);
   $('shots-toggle').addEventListener('change', onShotsToggle);
   $('btn-shots-start').addEventListener('click', onShotsStart);
   $('btn-shots-stop').addEventListener('click', onShotsStop);
   $('btn-review-start').addEventListener('click', onReviewStart);
   $('btn-review-stop').addEventListener('click', onReviewStop);
+}
+
+// ── Date range ────────────────────────────────────────────────────────────
+/* Everything the user exports, previews or ranks goes through here, so the
+ * date range cannot apply to one output and not another. */
+function rowsForExport() {
+  return applyDateFilter(exportRows).rows;
+}
+
+function dateRange() {
+  return { from: $('input-from').value || '', to: $('input-to').value || '' };
+}
+
+/* Rows the user asked for. Undated rows are KEPT and counted separately: a
+ * filter that silently drops what it could not read is worse than no filter,
+ * and on some platforms a date is not always recoverable. */
+function applyDateFilter(rows) {
+  const { from, to } = dateRange();
+  if (!from && !to) return { rows, dropped: 0, undated: 0 };
+  const D = (typeof ScrapeSuiteDates !== 'undefined') ? ScrapeSuiteDates : null;
+  if (!D) return { rows, dropped: 0, undated: 0 };
+  let dropped = 0, undated = 0;
+  const kept = rows.filter(r => {
+    const resolved = D.resolvePostDate(r);
+    const verdict = D.inDateRange(resolved, from, to);
+    if (verdict.undated) undated++;
+    if (!verdict.keep) dropped++;
+    return verdict.keep;
+  });
+  return { rows: kept, dropped, undated };
+}
+
+function onDateRangeChange() {
+  const { from, to } = dateRange();
+  if (from && to && from > to) {
+    $('date-hint').textContent = '⚠ The start date is after the end date.';
+    return;
+  }
+  const r = applyDateFilter(exportRows);
+  $('date-hint').textContent = (!from && !to)
+    ? 'Leave blank for everything. With a start date, scraping stops once it passes that date instead of scrolling the whole profile.'
+    : `${r.rows.length} of ${exportRows.length} posts in range` +
+      (r.undated ? ` · ${r.undated} undated, kept` : '');
+  refreshPreview();
+  updateExportButtons();
 }
 
 // ── Screenshots of the top posts ──────────────────────────────────────────
@@ -598,7 +651,7 @@ function endShots() {
  * ranking a blank as zero would quietly fill the top ten with posts we know
  * nothing about. */
 function topRowsBy(metric, n) {
-  const scored = exportRows
+  const scored = rowsForExport()
     .map(r => ({ r, v: parseFloat(String(r[metric] ?? '').replace(/[^0-9.]/g, '')) }))
     .filter(x => isFinite(x.v) && x.v > 0 && x.r.URL);
   scored.sort((a, b) => b.v - a.v);
@@ -966,7 +1019,9 @@ async function onStartCrawl() {
   await chrome.tabs.sendMessage(tabId, {
     action: 'startInfiniteScroll',
     tabId,
-    maxScrolls
+    maxScrolls,
+    from: dateRange().from,
+    to: dateRange().to,
   }).catch(() => {});
 }
 
@@ -997,7 +1052,8 @@ function listenMessages() {
     if (msg.type === 'crawlComplete') {
       exportRows = msg.allRows || exportRows;
       endCrawl();
-      setStatus(`Complete — ${exportRows.length} rows collected`, 'done');
+      setStatus(`Complete — ${exportRows.length} rows collected` +
+        (msg.stopReason ? ` (${msg.stopReason})` : ''), 'done');
       updateExportButtons();
       $('badge-rows').textContent = exportRows.length;
       recomputeInvestment();
@@ -1073,8 +1129,9 @@ function updateExportButtons() {
 
 // ── CSV download (ranked "Top Performers" view) ───────────────────────────
 function downloadCSV() {
-  if (!exportRows.length) return;
-  const { headers, rows } = buildRanked(orderByPopulated(currentHeaders(), exportRows), exportRows);
+  const src = rowsForExport();
+  if (!src.length) return;
+  const { headers, rows } = buildRanked(orderByPopulated(currentHeaders(), src), src);
 
   const esc = v => {
     const s = String(v ?? '');
@@ -1100,10 +1157,11 @@ function downloadCSV() {
 //   Tab 2 "Top Performers"  : ranked (Rank column, sorted by performance)
 // ── Real .xlsx (OOXML) export — opens in Excel with no format warning ─────
 function downloadXLSX() {
-  if (!exportRows.length) return;
+  const sourceRows = rowsForExport();
+  if (!sourceRows.length) return;
 
-  const rawHeaders = orderByPopulated(currentHeaders(), exportRows);
-  const ranked = buildRanked(rawHeaders, exportRows);
+  const rawHeaders = orderByPopulated(currentHeaders(), sourceRows);
+  const ranked = buildRanked(rawHeaders, sourceRows);
 
   // Analysis block for the Top Performers tab
   const a = computeAnalysis(exportRows);
