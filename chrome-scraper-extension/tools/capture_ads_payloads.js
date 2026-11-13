@@ -203,6 +203,34 @@
     peek: function (i) { return hits[i || 0]; },
     cards: function () { var c = snapDom(); console.log('[capture] ad cards found:', c.length); return c; },
     clear: function () { hits = []; console.log('[capture] cleared'); },
+
+    /* Scroll, then save, with no further typing. Facebook prints a scary
+     * "Stop!" banner and can refuse console input entirely, so the whole run
+     * has to be possible from a single paste into DevTools > Sources >
+     * Snippets. */
+    autoRun: function (seconds) {
+      var secs = seconds || 25;
+      var ticks = 0;
+      console.log('[capture] auto-run: scrolling for ' + secs + 's, then saving...');
+      var timer = setInterval(function () {
+        window.scrollBy(0, 1400);
+        ticks++;
+        if (ticks % 5 === 0) {
+          console.log('[capture] ' + ticks + 's - ' + snapDom().length +
+                      ' posts on screen, ' + hits.length + ' responses kept');
+        }
+        if (ticks >= secs) {
+          clearInterval(timer);
+          var found = snapDom().length;
+          if (!found && !hits.length) {
+            console.warn('[capture] NOTHING FOUND - do not send a file, report this instead');
+            return;
+          }
+          console.log('[capture] done: ' + found + ' posts, ' + hits.length + ' responses');
+          window.__ssCapture.save();
+        }
+      }, 1000);
+    },
     save: function () {
       var dom = snapDom();
       if (!hits.length && !dom.length) {
