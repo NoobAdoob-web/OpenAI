@@ -64,6 +64,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.action === 'startShots') {
+    startShots(msg).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg.action === 'stopShots') { SHOTS.active = false; sendResponse({ ok: true }); return; }
   if (msg.action === 'startOcr') {
     startOcr(msg).then(() => sendResponse({ ok: true }));
     return true;
@@ -272,6 +277,81 @@ async function getFullResImage(postUrl) {
   if (m) return deEnt(m[1]);
 
   return '';
+}
+
+/* Chrome throttles tabs.captureVisibleTab to a couple of calls a second and
+ * throws past that, so captures are spaced deliberately. */
+const SHOTS = { active: false, minGapMs: 1100 };
+
+async function startShots(msg) {
+  const items = msg.items || [];   // [{ key, rank, label }]
+  const tabId = msg.tabId;
+  SHOTS.active = true;
+  await ensureOffscreen();
+
+  // captureVisibleTab photographs the ACTIVE tab of a window, so the window
+  // has to be named and the post's tab has to be the active one in it -
+  // otherwise it quietly returns a picture of whatever else is in front.
+  let windowId;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    windowId = tab.windowId;
+    if (!tab.active) await chrome.tabs.update(tabId, { active: true });
+  } catch (_) {}
+
+  let done = 0, lastCapture = 0;
+  for (const it of items) {
+    if (!SHOTS.active) break;
+    let dataUrl = '', err = '', w = 0, h = 0;
+    try {
+      const pos = await chrome.tabs.sendMessage(tabId, { action: 'scrollToPost', url: it.key });
+      if (!pos || !pos.ok) throw new Error((pos && pos.error) || 'post not found');
+
+      // Let the scroll settle and lazy images decode before the shutter.
+      await sleep(pos.pendingImages ? 900 : 450);
+
+      const gap = Date.now() - lastCapture;
+      if (gap < SHOTS.minGapMs) await sleep(SHOTS.minGapMs - gap);
+      // Stamp BEFORE the call: Chrome counts rejected captures against the
+      // quota too, so a failure that left the clock unset used to push the
+      // next attempt over the limit and fail it as well.
+      lastCapture = Date.now();
+      let shot;
+      try {
+        shot = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
+      } catch (e) {
+        const m = String(e && e.message ? e.message : e);
+        if (/all_urls|activeTab/i.test(m)) {
+          throw new Error('Chrome will not photograph the tab until the extension ' +
+            'is opened on it. Close this popup, click the extension icon on the ' +
+            'post page, and start the capture again.');
+        }
+        throw e;
+      }
+
+      // Re-measure: the page may have shifted while images loaded.
+      const now = await chrome.tabs.sendMessage(tabId,
+        { action: 'scrollToPost', url: it.key, measureOnly: true });
+      const rect = (now && now.ok) ? now.rect : pos.rect;
+
+      const cropped = await chrome.runtime.sendMessage({
+        target: 'offscreen', action: 'cropShot',
+        dataUrl: shot, rect, dpr: pos.dpr, maxEdge: 900,
+      });
+      if (cropped && cropped.ok) { dataUrl = cropped.dataUrl; w = cropped.w; h = cropped.h; }
+      else throw new Error((cropped && cropped.error) || 'crop failed');
+    } catch (e) {
+      err = String(e && e.message ? e.message : e).slice(0, 140);
+    }
+    done++;
+    chrome.runtime.sendMessage({
+      type: 'shotProgress', done, total: items.length,
+      key: it.key, rank: it.rank, label: it.label, dataUrl, w, h, error: err,
+    }).catch(() => {});
+  }
+
+  SHOTS.active = false;
+  chrome.runtime.sendMessage({ type: 'shotsComplete', count: done }).catch(() => {});
 }
 
 async function startOcr(msg) {

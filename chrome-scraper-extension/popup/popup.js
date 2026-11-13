@@ -570,8 +570,106 @@ function bindUI() {
   $('ocr-toggle').addEventListener('change', onOcrToggle);
   $('btn-ocr-start').addEventListener('click', onOcrStart);
   $('btn-ocr-stop').addEventListener('click', onOcrStop);
+  $('shots-toggle').addEventListener('change', onShotsToggle);
+  $('btn-shots-start').addEventListener('click', onShotsStart);
+  $('btn-shots-stop').addEventListener('click', onShotsStop);
   $('btn-review-start').addEventListener('click', onReviewStart);
   $('btn-review-stop').addEventListener('click', onReviewStop);
+}
+
+// ── Screenshots of the top posts ──────────────────────────────────────────
+let SHOT_FILES = [];
+let SHOT_FAILS = [];
+
+function onShotsToggle() {
+  $('shots-options').style.display = $('shots-toggle').checked ? 'block' : 'none';
+}
+function setShotsStatus(t, cls) {
+  const el = $('shots-status');
+  el.textContent = t || '';
+  el.className = 'crawl-status' + (cls ? ' ' + cls : '');
+}
+function endShots() {
+  $('btn-shots-start').style.display = 'inline-flex';
+  $('btn-shots-stop').style.display = 'none';
+}
+
+/* Rank by the chosen metric, skipping rows that have no value for it -
+ * ranking a blank as zero would quietly fill the top ten with posts we know
+ * nothing about. */
+function topRowsBy(metric, n) {
+  const scored = exportRows
+    .map(r => ({ r, v: parseFloat(String(r[metric] ?? '').replace(/[^0-9.]/g, '')) }))
+    .filter(x => isFinite(x.v) && x.v > 0 && x.r.URL);
+  scored.sort((a, b) => b.v - a.v);
+  return scored.slice(0, n);
+}
+
+function onShotsStart() {
+  const metric = $('shots-metric').value;
+  const want = Math.max(1, Math.min(50, parseInt($('shots-count').value, 10) || 10));
+  const top = topRowsBy(metric, want);
+  if (!top.length) {
+    setShotsStatus(`No posts have a value for ${metric.replace(' (number)', '')} yet — scrape first.`, 'warn');
+    return;
+  }
+  SHOT_FILES = [];
+  SHOT_FAILS = [];
+  $('btn-shots-start').style.display = 'none';
+  $('btn-shots-stop').style.display = 'inline-flex';
+  setShotsStatus(`Capturing ${top.length} posts…`);
+
+  const short = metric.replace(' (number)', '').toLowerCase();
+  chrome.runtime.sendMessage({
+    action: 'startShots',
+    tabId,
+    items: top.map((x, i) => ({
+      key: x.r.URL,
+      rank: i + 1,
+      label: `${String(i + 1).padStart(2, '0')}-${formatCount(x.v)}-${short}`,
+    })),
+  });
+}
+
+function onShotsStop() {
+  chrome.runtime.sendMessage({ action: 'stopShots' });
+  endShots();
+  setShotsStatus('Stopped. Saving what was captured…');
+  finishShots();
+}
+
+function formatCount(v) {
+  if (v >= 1e6) return (v / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (v >= 1e3) return (v / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+  return String(Math.round(v));
+}
+
+function dataUrlToBytes(u) {
+  const b64 = String(u).split(',')[1] || '';
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/* One ZIP rather than ten downloads. zipStore is the same writer the .xlsx
+ * export uses; JPEGs are already compressed, so storing them is right. */
+function finishShots() {
+  if (!SHOT_FILES.length) {
+    setShotsStatus('Nothing captured — the posts may have scrolled out of the page.', 'warn');
+    return;
+  }
+  SHOT_FILES.sort((a, b) => a.rank - b.rank);
+  const files = SHOT_FILES.map(f => ({
+    name: `${f.label}.jpg`,
+    data: dataUrlToBytes(f.dataUrl),
+  }));
+  const bytes = zipStore(files);
+  triggerDownloadBytes(bytes, 'application/zip', `top_posts_${ts()}.zip`);
+  const miss = SHOT_FAILS.length ? ` · ${SHOT_FAILS.length} not found on the page` : '';
+  setShotsStatus(`✓ Saved ${files.length} screenshots${miss}`, 'done');
+  SHOT_FILES = [];
+  SHOT_FAILS = [];
 }
 
 // ── Review collection by star (Amazon) ────────────────────────────────────
@@ -921,6 +1019,18 @@ function listenMessages() {
       setDeepStatus(`✓ Done — ${msg.count} posts opened, ${countEnriched()} enriched`, 'done');
       updateExportButtons();
       recomputeInvestment();  // also refreshes the preview
+    }
+
+    if (msg.type === 'shotProgress') {
+      if (msg.dataUrl) SHOT_FILES.push({ rank: msg.rank, label: msg.label, dataUrl: msg.dataUrl });
+      else SHOT_FAILS.push({ label: msg.label, error: msg.error });
+      setShotsStatus(`Capturing… ${msg.done}/${msg.total}` +
+        (SHOT_FAILS.length ? ` — ${SHOT_FAILS.length} could not be found` : ''));
+    }
+
+    if (msg.type === 'shotsComplete') {
+      endShots();
+      finishShots();
     }
 
     if (msg.type === 'ocrProgress') {

@@ -200,6 +200,43 @@
       </div>
     </div>
 
+    <!-- Top-post screenshots -->
+    <div class="section" id="shots-section">
+      <label class="deep-master">
+        <input type="checkbox" id="shots-toggle">
+        <span class="deep-master-label">📸 Screenshots of top posts <span class="deep-sub">— saved as one ZIP</span></span>
+      </label>
+
+      <div id="shots-options" style="display:none">
+        <div class="deep-row">
+          <label class="lbl">Rank by:</label>
+          <select id="shots-metric" class="num-input num-input-wide">
+            <option value="Views (number)">Views</option>
+            <option value="Likes (number)">Likes</option>
+            <option value="Comments (number)">Comments</option>
+          </select>
+          <label class="lbl">How many:</label>
+          <input type="number" id="shots-count" value="10" min="1" max="50" class="num-input">
+        </div>
+
+        <div class="callout callout-warn">
+          <strong>⚠ How it works:</strong>
+          <ul>
+            <li>Scrolls to each of the top posts <b>on the page</b> and photographs the post as it appears.</li>
+            <li>Chrome limits how fast a tab can be photographed, so allow <b>~1 second per post</b>.</li>
+            <li>Only posts still loaded on the page can be captured — scrape first, and don't navigate away.</li>
+            <li>Files are named by rank, so <b>01</b> is the top post.</li>
+          </ul>
+        </div>
+
+        <div class="deep-row">
+          <button id="btn-shots-start" class="btn btn-primary">▶ Capture top posts</button>
+          <button id="btn-shots-stop" class="btn btn-danger" style="display:none">■ Stop</button>
+        </div>
+        <div class="crawl-status" id="shots-status"></div>
+      </div>
+    </div>
+
     <!-- Export -->
     <div class="export-row">
       <button id="btn-csv" class="btn btn-export btn-csv" disabled>

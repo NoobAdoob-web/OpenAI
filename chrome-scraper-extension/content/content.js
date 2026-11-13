@@ -647,6 +647,70 @@
     return r;
   }
 
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  POST SCREENSHOTS
+  //  The service worker can only capture the whole visible tab, so each post
+  //  has to be scrolled into view and its rectangle measured here.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  function postIdOf(href) {
+    const m = String(href || '').match(
+      /\/(?:reel|reels|p|tv|videos|posts|watch)\/([A-Za-z0-9_-]{5,})|[?&]v=([A-Za-z0-9_-]{5,})/);
+    return m ? (m[1] || m[2]) : '';
+  }
+
+  /* The card for a post: climb from its link while the parent still covers
+   * exactly one post. Stop below the grid - the same rule that proved correct
+   * against the live Meta and Instagram markup. */
+  function cardFor(url) {
+    const want = postIdOf(url);
+    if (!want) return null;
+    const links = Array.from(document.querySelectorAll('a[href]'))
+      .filter(a => postIdOf(a.getAttribute('href') || '') === want);
+    if (!links.length) return null;
+    let el = links[0];
+    const countPosts = (n) => {
+      const seen = Object.create(null);
+      let c = 0;
+      n.querySelectorAll('a[href]').forEach(a => {
+        const id = postIdOf(a.getAttribute('href') || '');
+        if (!id || seen[id]) return;
+        seen[id] = 1; c++;
+      });
+      return c;
+    };
+    for (let d = 0; d < 20 && el.parentElement; d++) {
+      const par = el.parentElement;
+      if (countPosts(par) > 1) break;
+      if (par === document.body || par === document.documentElement) break;
+      el = par;
+    }
+    return el;
+  }
+
+  /* Scroll the post into view and report where it landed. The caller waits
+   * for the returned settle time before capturing, so lazy images have a
+   * chance to load - a screenshot of a grey placeholder is worthless. */
+  function scrollToPost(url, measureOnly) {
+    const el = cardFor(url);
+    if (!el) return { ok: false, error: 'post not found on this page' };
+    // Re-measuring must NOT scroll again: the photograph has already been
+    // taken, and moving the page afterwards makes the rectangle describe a
+    // layout that no longer matches the image.
+    if (!measureOnly) el.scrollIntoView({ block: 'center', inline: 'center' });
+    const r = el.getBoundingClientRect();
+    const imgs = Array.from(el.querySelectorAll('img'));
+    const pending = imgs.filter(i => !i.complete || !i.naturalWidth).length;
+    return {
+      ok: true,
+      rect: { x: Math.max(0, r.left), y: Math.max(0, r.top), w: r.width, h: r.height },
+      dpr: window.devicePixelRatio || 1,
+      offscreen: r.top < 0 || r.bottom > window.innerHeight,
+      pendingImages: pending,
+    };
+  }
+
   function emptyRow() {
     const r = {};
     SOCIAL_COLUMNS.forEach(c => { r[c] = ''; });
@@ -1665,6 +1729,9 @@
     if (msg.tabId) _tabId = msg.tabId;
 
     switch (msg.action) {
+      case 'scrollToPost':
+        sendResponse(scrollToPost(msg.url, msg.measureOnly));
+        return;
       case 'ping':
         sendResponse({ ok: true });
         break;
