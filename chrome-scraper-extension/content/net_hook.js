@@ -80,30 +80,69 @@
     }
     return best ? best.url : '';
   }
+  /* Facebook sends view counts already abbreviated ("37K"), so the numeric
+   * pick() drops them. Turn them back into a number. */
+  function fromAbbrev(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : null;
+    if (typeof v !== 'string') return null;
+    var m = v.replace(/,/g, '').match(/^\s*([\d.]+)\s*([KMB])?\s*$/i);
+    if (!m) return null;
+    var n = parseFloat(m[1]);
+    if (!isFinite(n)) return null;
+    var mul = { k: 1e3, m: 1e6, b: 1e9 }[(m[2] || '').toLowerCase()] || 1;
+    return Math.round(n * mul);
+  }
+
+  /* A Facebook reel is identified in the DOM by the id in its permalink, which
+   * is not the same number as post_id. Key on the permalink so the row the
+   * content script built from the page can actually be matched. */
+  function permalinkCode(o) {
+    var urls = [o.permalink_url, o.shareable_url, o.url];
+    for (var i = 0; i < urls.length; i++) {
+      if (typeof urls[i] !== 'string') continue;
+      var m = urls[i].match(/\/(?:reel|videos|posts|p)\/(\d{6,}|[A-Za-z0-9_-]{5,})/);
+      if (m) return m[1];
+    }
+    return '';
+  }
+
   function pick() {
     for (var i = 0; i < arguments.length; i++) { var v = num(arguments[i]); if (v !== null) return v; }
     return null;
   }
 
   // Walk any JSON looking for objects that look like a media/post node.
-  function collect(obj, out, depth) {
+  /* `inherited` carries the nearest enclosing caption down the tree. Facebook
+   * splits a reel across two objects: the outer node holds message.text while
+   * the inner media object holds the permalink, duration and view count. The
+   * item is keyed off the permalink, so without this the caption is dropped. */
+  function collect(obj, out, depth, inherited) {
     if (!obj || out.length >= MAX_ITEMS || depth > MAX_DEPTH) return;
     if (Array.isArray(obj)) {
-      for (var i = 0; i < obj.length; i++) collect(obj[i], out, depth + 1);
+      for (var i = 0; i < obj.length; i++) collect(obj[i], out, depth + 1, inherited);
       return;
     }
     if (typeof obj !== 'object') return;
 
-    var code = obj.code || obj.shortcode || obj.short_code;
+    var here = textOfCaption(obj);
+    if (here) inherited = here;
+
+    var code = obj.code || obj.shortcode || obj.short_code || permalinkCode(obj);
     var id = obj.pk || obj.id || obj.post_id || obj.video_id;
     if ((typeof code === 'string' && code) || (typeof id === 'string' && /^\d{6,}$/.test(id))) {
-      var caption = textOfCaption(obj);
+      // `here` is this object's OWN caption. An inherited one may fill an
+      // item but must never be what qualifies an object as a post, or every
+      // id in the subtree - the page's own actor id included - becomes a row.
+      var caption = here || inherited || '';
       var taken = pick(obj.taken_at, obj.taken_at_timestamp, obj.device_timestamp,
                        obj.publish_time, obj.creation_time, obj.created_time);
       var dur = pick(obj.video_duration, obj.video_duration_seconds, obj.duration,
+                     obj.length_in_second,
                      obj.playable_duration_in_ms ? obj.playable_duration_in_ms / 1000 : null);
       var views = pick(obj.play_count, obj.view_count, obj.video_play_count,
                        obj.ig_play_count, obj.video_view_count);
+      // Facebook's reels grid only ever sends the abbreviated form.
+      if (views === null) views = fromAbbrev(obj.play_count_reduced);
       var likes = pick(obj.like_count,
                        obj.edge_liked_by && obj.edge_liked_by.count,
                        obj.edge_media_preview_like && obj.edge_media_preview_like.count);
@@ -113,7 +152,7 @@
       var video = bestUrl(obj.video_versions) || (typeof obj.video_url === 'string' ? obj.video_url : '');
       var image = bestUrl(obj.image_versions2 && obj.image_versions2.candidates)
                || (typeof obj.display_url === 'string' ? obj.display_url : '');
-      if (caption || taken || dur || views !== null || likes !== null || comments !== null || video || image) {
+      if (here || taken || dur || views !== null || likes !== null || comments !== null || video || image) {
         out.push({
           code: (typeof code === 'string' && code) ? code : String(id),
           caption: caption || '',
@@ -129,9 +168,18 @@
     }
     for (var k in obj) {
       if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
-      try { collect(obj[k], out, depth + 1); } catch (_) {}
+      try { collect(obj[k], out, depth + 1, inherited); } catch (_) {}
     }
   }
+
+  /* Exposed purely so the parser can be exercised against real captured
+   * payloads in tests; nothing in the product reads it. */
+  function parseItems(text) {
+    var out = [];
+    try { collect(JSON.parse(text), out, 0); } catch (_) {}
+    return out;
+  }
+  try { window.__SS_NET_PARSE__ = parseItems; } catch (_) {}
 
   function scan(text) {
     if (!text || text.length < 40) return;
